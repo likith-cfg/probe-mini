@@ -45,31 +45,51 @@ GET https://monitoring.googleapis.com/v3/projects/{project}/timeSeries
 Recent points = scraping is working end to end, regardless of whether you
 can see the CRD itself.
 
-## Layer 3 — root cause of a failure (Cloud Audit Logs, still no Armada needed)
+## Layer 3 — root cause of a failure, auto-diagnosed (Cloud Audit Logs, no Armada needed)
 
-If Layer 1 shows the resource missing, check whether a deploy was even
-*attempted* before assuming failure:
+`scripts/probe.py verify` already does this automatically — you don't need
+to paste in an Armada error message by hand. It queries Cloud Audit Logs for
+failed `CreateAlertPolicy`/`CreateDashboard` calls matching the app name,
+dedupes retries, and matches each error message against a `KNOWN_FIXES`
+table (in `scripts/probe.py`) that maps a real GCP error pattern to a
+concrete fix:
 
-```
-POST https://logging.googleapis.com/v2/entries:list
-{
-  "resourceNames": ["projects/{project}"],
-  "filter": "protoPayload.authenticationInfo.principalEmail=\"gke-iac-sa@{project}.iam.gserviceaccount.com\"
-             AND protoPayload.serviceName=\"monitoring.googleapis.com\"
-             AND protoPayload.methodName:\"Create\"",
-  "orderBy": "timestamp desc"
-}
+```bash
+python3 scripts/probe.py verify --project <project-id> --display-name-contains <app-name>
 ```
 
-(Same bearer token as Layer 1.) Interpretation:
-- A `Create*` entry with a non-empty `status` (error code/message) → **that
-  message is the root cause** (bad PromQL, IAM denial, quota, bad field).
-  Explain it plainly and propose the fix (usually a config/audit issue —
-  loop back to the `probe` skill to correct and regenerate).
-- No `Create*` entry at all → the failure/delay is happening **before**
-  GCP ever saw the request (bad YAML caught by a linter, failed test,
-  pipeline queued/blocked, wrong target branch). This part genuinely
-  requires looking at CI/Armada directly — say so, don't guess further.
+This is what lets the agent close the loop end-to-end: change fails in
+Armada → user (or you) runs `/probe-verify` → the exact error + a matching
+fix comes back automatically, without needing Armada/CI access at all —
+Cloud Audit Logs already recorded the same error Armada showed the user,
+because both are just reporting the same underlying `gcloud`/Terraform
+provider API call's response.
+
+Known fixes currently in `KNOWN_FIXES` (extend this list whenever you
+diagnose a new failure mode — don't just fix-and-forget):
+- `"PromQL metric(s) are invalid"` → the query uses a `_count`/`_sum`
+  suffix derived from a Prometheus histogram (e.g. `http_server_requests_count`
+  off `http_server_requests/histogram`); GCP's alert-policy create-time
+  validator can't statically verify these and rejects with
+  `INVALID_ARGUMENT` even though the query is valid at evaluation time.
+  Fix: add `disableMetricValidation: true` to that condition. (Real example:
+  dcs-provider's "HTTP Workload Failures" alert, 2026-07-24 — 13 retries,
+  all identical error, fixed by adding this field. `probe`'s generator and
+  `audit` now default/check for this.)
+- `PERMISSION_DENIED` → deploying service account missing an IAM role.
+- notification channel not found → wrong/nonexistent channel resource name.
+
+If `scripts/probe.py verify` finds a failure with **no** matching
+`KNOWN_FIXES` entry, treat the raw `error_message` field as the ground
+truth (don't guess) — investigate it, and once you've found the real fix,
+**add a new entry to `KNOWN_FIXES`** so probe auto-diagnoses it next time
+instead of requiring a human to re-discover it.
+
+If Layer 1 shows the resource missing and Layer 3 finds **no** failed
+`Create*` attempts either, the failure/delay is happening **before** GCP
+ever saw the request (bad YAML caught by a linter, failed test, pipeline
+queued/blocked, wrong target branch) — that genuinely requires looking at
+CI/Armada directly; say so, don't guess further.
 
 ## Layer 4 — real success/failure verdict with metric correlation: SRE Advisor
 

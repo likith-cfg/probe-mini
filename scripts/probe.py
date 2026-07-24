@@ -69,7 +69,14 @@ spec:
           {query}
         duration: 0s
         evaluationInterval: 60s
+        disableMetricValidation: true
 """
+# disableMetricValidation is set by default: GCP's alert-policy create-time
+# validator can't statically verify _count/_sum series derived from a
+# Prometheus histogram (e.g. http_server_requests_count off
+# http_server_requests/histogram) and rejects with INVALID_ARGUMENT even
+# though the query is valid and works at evaluation time. This is the
+# officially sanctioned GCP bypass for exactly that false positive.
 
 DASHBOARD_TEMPLATE = """apiVersion: monitoring.cnrm.cloud.google.com/v1beta1
 kind: MonitoringDashboard
@@ -219,8 +226,20 @@ def cmd_audit(args: argparse.Namespace) -> None:
                     query = ""
                     conditions = spec.get("conditions", [])
                     for cond in conditions:
-                        pql = cond.get("conditionPrometheusQueryLanguage", {}).get("query", "")
+                        pql_cond = cond.get("conditionPrometheusQueryLanguage")
+                        if pql_cond is None:
+                            continue
+                        pql = pql_cond.get("query", "")
                         query += pql
+                        if re.search(r"\b\w+_(count|sum)\b", pql) and not pql_cond.get("disableMetricValidation"):
+                            warnings.append(
+                                f"{path}: missing-disable-metric-validation — query uses a "
+                                "'_count'/'_sum' suffix (likely derived from a Prometheus histogram); "
+                                "GCP's alert-policy create-time validator rejects these with "
+                                "INVALID_ARGUMENT unless disableMetricValidation: true is set. "
+                                "This is the exact failure mode seen in dcs-provider's "
+                                "'HTTP Workload Failures' alert on 2026-07-24."
+                            )
                     lowered = query.lower()
                     for risky in CARDINALITY_RISK_WORDS:
                         if risky in lowered:
@@ -252,6 +271,97 @@ def _get_json(url: str, token: str) -> dict:
         return json.loads(resp.read())
 
 
+def _post_json(url: str, token: str, body: dict) -> dict:
+    data = json.dumps(body).encode()
+    req = urllib.request.Request(
+        url, data=data, method="POST",
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req) as resp:
+        return json.loads(resp.read())
+
+
+# Known GCP error-message patterns -> (what it means, the concrete fix).
+# Grown empirically from real Armada/Cloud-Audit-Log failures — add to this
+# as new failure modes are diagnosed, don't just report-and-forget them.
+KNOWN_FIXES = [
+    (
+        re.compile(r"PromQL metric\(s\) are invalid", re.I),
+        "The alert-policy create-time metric validator can't statically verify a "
+        "'_count'/'_sum' series derived from a Prometheus histogram (e.g. "
+        "http_server_requests_count off http_server_requests/histogram) and rejects "
+        "it with INVALID_ARGUMENT even though the query is valid at evaluation time. "
+        "FIX: add 'disableMetricValidation: true' to that condition's "
+        "conditionPrometheusQueryLanguage block (this is GCP's own sanctioned bypass "
+        "for exactly this case), then re-apply.",
+    ),
+    (
+        re.compile(r"permission.*denied|PERMISSION_DENIED", re.I),
+        "The deploying service account lacks an IAM role it needs (commonly "
+        "'Monitoring Editor' on the target project, or 'roles/monitoring.notificationChannelViewer' "
+        "for the referenced notification channel). FIX: check IAM bindings for the "
+        "principal shown, grant the missing role, then re-apply.",
+    ),
+    (
+        re.compile(r"notificationChannel.*not found|does not exist", re.I),
+        "The alert policy references a notificationChannels resource name that "
+        "doesn't exist in this project (wrong project ID, typo, or borrowed "
+        "channel from a different project). FIX: list real channels with "
+        "'v3/projects/{project}/notificationChannels' and use one that exists "
+        "in this exact project.",
+    ),
+]
+
+
+def _diagnose_audit_log_failures(project: str, name_filter: str, token: str) -> list[dict]:
+    """Query Cloud Audit Logs for failed Create* calls whose request payload
+    mentions name_filter, and match each error message against KNOWN_FIXES.
+    This is what lets the agent 'get this data and fix the issue' without the
+    user needing to paste the Armada error message by hand."""
+    filter_str = (
+        '(protoPayload.methodName="google.monitoring.v3.AlertPolicyService.CreateAlertPolicy" '
+        'OR protoPayload.methodName="google.monitoring.v3.DashboardsService.CreateDashboard") '
+        f'AND timestamp>="{(datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")}"'
+    )
+    body = {
+        "resourceNames": [f"projects/{project}"],
+        "filter": filter_str,
+        "orderBy": "timestamp desc",
+        "pageSize": 50,
+    }
+    data = _post_json("https://logging.googleapis.com/v2/entries:list", token, body)
+    grouped: dict[tuple[str, str], dict] = {}
+    for entry in data.get("entries", []):
+        p = entry.get("protoPayload", {})
+        status = p.get("status") or {}
+        if not status.get("message"):
+            continue  # empty status == success
+        req = p.get("request", {})
+        display_name = (
+            req.get("alertPolicy", {}).get("displayName")
+            or req.get("dashboard", {}).get("displayName")
+            or ""
+        )
+        if name_filter.lower() not in display_name.lower():
+            continue
+        message = status["message"]
+        key = (display_name, message)
+        ts = entry.get("timestamp")
+        if key not in grouped:
+            fix = next((f for pat, f in KNOWN_FIXES if pat.search(message)), None)
+            grouped[key] = {
+                "first_seen": ts,
+                "last_seen": ts,
+                "attempts": 0,
+                "principal": p.get("authenticationInfo", {}).get("principalEmail"),
+                "display_name": display_name,
+                "error_message": message,
+                "suggested_fix": fix or "No known-fix pattern matched — needs manual investigation of this exact message.",
+            }
+        grouped[key]["attempts"] += 1
+        grouped[key]["first_seen"] = min(grouped[key]["first_seen"], ts)
+        grouped[key]["last_seen"] = max(grouped[key]["last_seen"], ts)
+    return list(grouped.values())
 def cmd_verify(args: argparse.Namespace) -> None:
     token = _access_token()
     name_filter = args.display_name_contains
@@ -275,13 +385,20 @@ def cmd_verify(args: argparse.Namespace) -> None:
     for d in dashes:
         print(" -", d.get("displayName"))
 
-    if not policies and not dashes:
-        print(
-            "\nNo resources found live in GCP yet. Checking Cloud Audit Logs for any "
-            "attempted-and-failed Create* call would show the root cause if a deploy "
-            "was attempted; absence of any Create* entry usually means the pipeline "
-            "hasn't run (or hasn't reached GCP) rather than failed at the GCP API layer."
-        )
+    print(f"\n=== Recent failed Create* attempts in Cloud Audit Logs (last 2 days) ===")
+    findings = _diagnose_audit_log_failures(args.project, name_filter, token)
+    if not findings:
+        if not policies and not dashes:
+            print(
+                "No failed Create* attempts found either. Likely the pipeline hasn't "
+                "run yet (or hasn't reached GCP) rather than failed at the GCP API layer."
+            )
+        else:
+            print("No failed Create* attempts found.")
+    for f in findings:
+        print(f" - \"{f['display_name']}\" | {f['attempts']}x attempt(s), {f['first_seen']} -> {f['last_seen']} | {f['principal']}")
+        print(f"   error: {f['error_message']}")
+        print(f"   fix:   {f['suggested_fix']}")
 
     if args.chg:
         print(f"\n=== SRE Advisor analysis for {args.chg} ===")
