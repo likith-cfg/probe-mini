@@ -375,11 +375,11 @@ def _classify_http_error(e: "urllib.error.HTTPError", url: str) -> Exception:
 def _diagnose_audit_log_failures(project: str, name_filter: str, token: str) -> list[dict]:
     """Query Cloud Audit Logs for failed Create* calls whose request payload
     mentions name_filter, and match each error message against the shared,
-    universal known-fixes knowledge base (scripts/kb_client.py, backed by
-    Cloud Datastore — see docs/superpowers/specs/2026-07-24-shared-fixes-kb-design.md).
-    This is what lets the agent 'get this data and fix the issue' without the
-    user needing to paste the Armada error message by hand, and lets a fix
-    diagnosed by one user help everyone else who hits the same error."""
+    universal known-fixes knowledge base (kb_client.py, backed by Cloud
+    Datastore). This is what lets the agent 'get this data and fix the issue'
+    without the user needing to paste the Armada error message by hand, and
+    lets a fix diagnosed by one user help everyone else who hits the same
+    error."""
     filter_str = (
         '(protoPayload.methodName="google.monitoring.v3.AlertPolicyService.CreateAlertPolicy" '
         'OR protoPayload.methodName="google.monitoring.v3.DashboardsService.CreateDashboard") '

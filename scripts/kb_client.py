@@ -1,13 +1,19 @@
 """kb_client.py: shared, universal known-fixes knowledge base for probe.
 
-Backed by Cloud Datastore (Datastore mode), talked to via its plain REST API
-using an OAuth bearer token the caller already has (the same token probe.py
-gets from `gcloud auth print-access-token`) — no new SDK dependency, keeping
-probe.py's "stdlib + PyYAML only" design intact.
-
-See docs/superpowers/specs/2026-07-24-shared-fixes-kb-design.md for the full
-design rationale (why Datastore over GCS/a vector DB, clustering approach,
-confidence weighting).
+Why a probe user's diagnosed fix should help every other probe user: errors
+like 'PromQL metric(s) are invalid' or a stale notificationChannels reference
+recur across many services/projects. Previously these lived in a hardcoded
+list in probe.py, so only the person who hit a given error first ever
+benefited from the fix. This module replaces that list with Cloud Datastore
+(Datastore mode) as the shared backing store:
+  - GCS would need hand-rolled read-modify-write locking for concurrent
+    contributors; a vector DB is overkill — GCP's error strings are fixed,
+    machine-generated text, not free-form prose, so plain string matching
+    (normalize + difflib fallback below) works fine.
+  - Datastore's REST API is talked to directly with the same OAuth bearer
+    token probe.py already gets from `gcloud auth print-access-token` — no
+    new SDK dependency, keeping probe.py's "stdlib + PyYAML only" design
+    intact.
 """
 from __future__ import annotations
 
