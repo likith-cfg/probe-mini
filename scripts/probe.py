@@ -14,6 +14,11 @@ Subcommands:
   probe.py verify --project PROJECT [--display-name-contains NAME]
       [--chg CHG1234567]
 
+  probe.py kb-submit --error-message TEXT --fix TEXT --outcome yes|no|not_sure
+      [--category X]
+
+  probe.py kb-seed
+
   probe.py check-refresh [--registry docs/registry.yaml]
       [--state docs/.last_refresh.json]
 """
@@ -35,6 +40,8 @@ try:
 except ImportError:
     print("PyYAML is required: pip install pyyaml", file=sys.stderr)
     sys.exit(1)
+
+import kb_client
 
 CB_TYPES = {"http", "grpc", "pubsub", "mom", "redis", "datastore", "gcs"}
 REQUIRED_ALERT_DOC_FIELDS = {"severity", "u_service", "u_assignment_group", "u_kb_article"}
@@ -280,10 +287,10 @@ class ApiUsageIssue(Exception):
     must not be silently reported as '0 matching'."""
 
 
-def _preflight_gcloud_auth() -> str:
-    """Check gcloud is installed and authenticated, and return a bearer token.
-    Raises EnvironmentIssue with a specific, actionable remediation instead of
-    a bare traceback or a misleading '0 matching' result."""
+def _preflight_gcloud_auth() -> tuple[str, str]:
+    """Check gcloud is installed and authenticated, and return (bearer_token,
+    active_account_email). Raises EnvironmentIssue with a specific, actionable
+    remediation instead of a bare traceback or a misleading '0 matching' result."""
     if shutil.which("gcloud") is None:
         raise EnvironmentIssue(
             "gcloud CLI is not installed / not on PATH.",
@@ -313,7 +320,7 @@ def _preflight_gcloud_auth() -> str:
             f"`gcloud auth print-access-token` failed: {token_result.stderr.strip()}",
             "Your gcloud session may be expired or misconfigured. Run `gcloud auth login` again.",
         )
-    return token_result.stdout.strip()
+    return token_result.stdout.strip(), active.stdout.strip()
 
 
 def _get_json(url: str, token: str) -> dict:
@@ -365,43 +372,14 @@ def _classify_http_error(e: "urllib.error.HTTPError", url: str) -> Exception:
     return ApiUsageIssue(f"HTTP {e.code} calling {url}: {body[:300]}")
 
 
-# Known GCP error-message patterns -> (what it means, the concrete fix).
-# Grown empirically from real Armada/Cloud-Audit-Log failures — add to this
-# as new failure modes are diagnosed, don't just report-and-forget them.
-KNOWN_FIXES = [
-    (
-        re.compile(r"PromQL metric\(s\) are invalid", re.I),
-        "The alert-policy create-time metric validator can't statically verify a "
-        "'_count'/'_sum' series derived from a Prometheus histogram (e.g. "
-        "http_server_requests_count off http_server_requests/histogram) and rejects "
-        "it with INVALID_ARGUMENT even though the query is valid at evaluation time. "
-        "FIX: add 'disableMetricValidation: true' to that condition's "
-        "conditionPrometheusQueryLanguage block (this is GCP's own sanctioned bypass "
-        "for exactly this case), then re-apply.",
-    ),
-    (
-        re.compile(r"permission.*denied|PERMISSION_DENIED", re.I),
-        "The deploying service account lacks an IAM role it needs (commonly "
-        "'Monitoring Editor' on the target project, or 'roles/monitoring.notificationChannelViewer' "
-        "for the referenced notification channel). FIX: check IAM bindings for the "
-        "principal shown, grant the missing role, then re-apply.",
-    ),
-    (
-        re.compile(r"notificationChannel.*not found|does not exist", re.I),
-        "The alert policy references a notificationChannels resource name that "
-        "doesn't exist in this project (wrong project ID, typo, or borrowed "
-        "channel from a different project). FIX: list real channels with "
-        "'v3/projects/{project}/notificationChannels' and use one that exists "
-        "in this exact project.",
-    ),
-]
-
-
 def _diagnose_audit_log_failures(project: str, name_filter: str, token: str) -> list[dict]:
     """Query Cloud Audit Logs for failed Create* calls whose request payload
-    mentions name_filter, and match each error message against KNOWN_FIXES.
+    mentions name_filter, and match each error message against the shared,
+    universal known-fixes knowledge base (scripts/kb_client.py, backed by
+    Cloud Datastore — see docs/superpowers/specs/2026-07-24-shared-fixes-kb-design.md).
     This is what lets the agent 'get this data and fix the issue' without the
-    user needing to paste the Armada error message by hand."""
+    user needing to paste the Armada error message by hand, and lets a fix
+    diagnosed by one user help everyone else who hits the same error."""
     filter_str = (
         '(protoPayload.methodName="google.monitoring.v3.AlertPolicyService.CreateAlertPolicy" '
         'OR protoPayload.methodName="google.monitoring.v3.DashboardsService.CreateDashboard") '
@@ -414,6 +392,16 @@ def _diagnose_audit_log_failures(project: str, name_filter: str, token: str) -> 
         "pageSize": 50,
     }
     data = _post_json("https://logging.googleapis.com/v2/entries:list", token, body)
+
+    kb_entities: list[dict] = []
+    kb_warning = None
+    try:
+        kb_entities = kb_client.fetch_all(token)
+    except kb_client.KbError as e:
+        # The shared KB is an enhancement, not core to verify — don't let an
+        # unreachable/inaccessible KB break audit-log diagnosis entirely.
+        kb_warning = str(e)
+
     grouped: dict[tuple[str, str], dict] = {}
     for entry in data.get("entries", []):
         p = entry.get("protoPayload", {})
@@ -432,7 +420,21 @@ def _diagnose_audit_log_failures(project: str, name_filter: str, token: str) -> 
         key = (display_name, message)
         ts = entry.get("timestamp")
         if key not in grouped:
-            fix = next((f for pat, f in KNOWN_FIXES if pat.search(message)), None)
+            match = kb_client.find_match(message, kb_entities) if kb_entities else None
+            if match:
+                suggested_fix = f"{match['fix']} {kb_client.confidence_label(match)}"
+            elif kb_warning:
+                suggested_fix = (
+                    f"Could not check the shared known-fixes KB ({kb_warning}) — "
+                    "needs manual investigation of this exact message."
+                )
+            else:
+                suggested_fix = (
+                    "No known-fix pattern matched in the shared KB — needs manual investigation "
+                    "of this exact message. Once diagnosed, contribute it with "
+                    "`probe.py kb-submit --error-message ... --fix ... --outcome yes` "
+                    "so other users hitting the same error benefit."
+                )
             grouped[key] = {
                 "first_seen": ts,
                 "last_seen": ts,
@@ -440,7 +442,7 @@ def _diagnose_audit_log_failures(project: str, name_filter: str, token: str) -> 
                 "principal": p.get("authenticationInfo", {}).get("principalEmail"),
                 "display_name": display_name,
                 "error_message": message,
-                "suggested_fix": fix or "No known-fix pattern matched — needs manual investigation of this exact message.",
+                "suggested_fix": suggested_fix,
             }
         grouped[key]["attempts"] += 1
         grouped[key]["first_seen"] = min(grouped[key]["first_seen"], ts)
@@ -468,7 +470,7 @@ def _print_api_usage_issue(e: ApiUsageIssue) -> None:
 
 def cmd_verify(args: argparse.Namespace) -> None:
     try:
-        token = _preflight_gcloud_auth()
+        token, _account = _preflight_gcloud_auth()
     except EnvironmentIssue as e:
         _print_environment_issue(e)
         sys.exit(2)  # distinct exit code: inconclusive, not pass/fail
@@ -544,6 +546,54 @@ def cmd_verify(args: argparse.Namespace) -> None:
             ))
 
 
+def cmd_kb_submit(args: argparse.Namespace) -> None:
+    """Contribute a fix (or another vote on an existing one) to the shared,
+    universal known-fixes knowledge base so other probe users/agents hitting
+    the same GCP error benefit from it too."""
+    try:
+        token, account = _preflight_gcloud_auth()
+    except EnvironmentIssue as e:
+        _print_environment_issue(e)
+        sys.exit(2)
+
+    try:
+        result = kb_client.submit(
+            token,
+            args.error_message,
+            args.fix,
+            args.outcome,
+            category=args.category,
+            principal=account,
+        )
+    except kb_client.KbError as e:
+        print(f"\n⚠️  Could not write to the shared knowledge base: {e}", file=sys.stderr)
+        sys.exit(2)
+
+    action = "Created new entry" if result["created"] else "Updated existing entry"
+    print(f"{action} {result['name']} (normalized: {result['normalized']!r})")
+    print(f"vote_count={result['vote_count']} score_sum={result['score_sum']}")
+
+
+def cmd_kb_seed(args: argparse.Namespace) -> None:
+    """One-time (idempotent) migration: seed the shared KB with today's
+    previously-hardcoded fixes so behavior doesn't regress before the KB has
+    organic contributions. See kb_client.SEED_FIXES."""
+    try:
+        token, account = _preflight_gcloud_auth()
+    except EnvironmentIssue as e:
+        _print_environment_issue(e)
+        sys.exit(2)
+
+    try:
+        results = kb_client.seed_from_static(token, principal=account)
+    except kb_client.KbError as e:
+        print(f"\n⚠️  Could not seed the shared knowledge base: {e}", file=sys.stderr)
+        sys.exit(2)
+
+    for r in results:
+        print(f"seeded {r['name']} (vote_count={r['vote_count']}, score_sum={r['score_sum']})")
+
+
 def cmd_check_refresh(args: argparse.Namespace) -> None:
     with open(args.state) as f:
         state = json.load(f)
@@ -594,6 +644,17 @@ def main() -> None:
     v.add_argument("--display-name-contains", required=True)
     v.add_argument("--chg", default=None, help="SNOW Change ID for SRE Advisor analysis, e.g. CHG1234567")
     v.set_defaults(func=cmd_verify)
+
+    ks = sub.add_parser("kb-submit", help="Contribute a fix to the shared known-fixes knowledge base")
+    ks.add_argument("--error-message", required=True, help="The raw GCP error message you diagnosed")
+    ks.add_argument("--fix", required=True, help="The fix text (only used if this is a new entry)")
+    ks.add_argument("--outcome", required=True, choices=sorted(kb_client.OUTCOME_WEIGHTS),
+                     help="Whether the fix worked: yes / no / not_sure")
+    ks.add_argument("--category", default="", help="Optional short tag, e.g. iam-permission")
+    ks.set_defaults(func=cmd_kb_submit)
+
+    kseed = sub.add_parser("kb-seed", help="One-time idempotent migration of legacy hardcoded fixes into the shared KB")
+    kseed.set_defaults(func=cmd_kb_seed)
 
     cr = sub.add_parser("check-refresh")
     cr.add_argument("--registry", default=os.path.join(os.path.dirname(__file__), "..", "docs", "registry.yaml"))
