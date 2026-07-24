@@ -1,9 +1,10 @@
 ---
 name: probe-help
 description: >
-  Show what the probe plugin can do. Use when the user asks "what can
-  probe do", "probe help", or "/probe-help".
+  Show what the probe plugin can do. Only invoked explicitly via the
+  `/probe-help` command.
 license: MIT
+disable-model-invocation: true
 ---
 
 # probe-help

@@ -2,12 +2,11 @@
 name: probe-verify
 description: >
   Check whether a GCP monitoring config change (or a deployment in general)
-  actually succeeded or failed. Use whenever the user asks "did the
-  deployment work", "is this alert live", "check if it failed", "why did it
-  fail", or wants root-cause analysis of a change against real metrics. This
-  is a DIFFERENT concern from the probe skill (which only generates/audits
-  local config, with zero deployment).
+  actually succeeded or failed. Only invoked explicitly via the
+  `/probe-verify` command — do not auto-trigger this from ambient mentions
+  of deployments/failures in conversation.
 license: MIT
+disable-model-invocation: true
 ---
 
 # probe-verify

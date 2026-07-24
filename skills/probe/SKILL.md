@@ -3,14 +3,11 @@ name: probe
 description: >
   Generate and audit GCP observability config (alert policies, dashboards,
   service monitors/PodMonitoring) for a Sabre GKE service against Sabre's
-  Observability/SysEng standards, then commit it. Use whenever the user
-  wants to "set up monitoring", "generate alerts", "onboard a new service
-  to GCP monitoring", "audit monitoring config", or mentions
-  completion.code.category, circuit breakers, GMP, MetricDescriptors, or
-  ServiceNow alert documentation fields (u_service/u_assignment_group/
-  u_kb_article). Do NOT use for verifying whether a deployment already
-  succeeded — use the probe-verify skill for that.
+  Observability/SysEng standards, then commit it. Only invoked explicitly
+  via the `/probe` command — do not auto-trigger this from ambient mentions
+  of monitoring/alerts/dashboards in conversation.
 license: MIT
+disable-model-invocation: true
 ---
 
 # probe
