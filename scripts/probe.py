@@ -24,8 +24,10 @@ import datetime
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 
 try:
@@ -260,15 +262,72 @@ def cmd_audit(args: argparse.Namespace) -> None:
     sys.exit(0 if passed else 1)
 
 
-def _access_token() -> str:
-    out = subprocess.run(["gcloud", "auth", "print-access-token"], capture_output=True, text=True, check=True)
-    return out.stdout.strip()
+class EnvironmentIssue(Exception):
+    """Raised when verify can't even run its checks — missing/misconfigured
+    gcloud, expired credentials, or an IAM permission gap. This is NEVER a
+    verdict on the user's deployment; it must be reported as a distinct,
+    clearly-flagged category so it isn't mistaken for '0 resources found'."""
+
+    def __init__(self, message: str, remediation: str):
+        super().__init__(message)
+        self.message = message
+        self.remediation = remediation
+
+
+class ApiUsageIssue(Exception):
+    """Raised for non-auth API errors (e.g. bad/nonexistent --project, malformed
+    request) — not an auth/env gap, but still not a deployment verdict, so it
+    must not be silently reported as '0 matching'."""
+
+
+def _preflight_gcloud_auth() -> str:
+    """Check gcloud is installed and authenticated, and return a bearer token.
+    Raises EnvironmentIssue with a specific, actionable remediation instead of
+    a bare traceback or a misleading '0 matching' result."""
+    if shutil.which("gcloud") is None:
+        raise EnvironmentIssue(
+            "gcloud CLI is not installed / not on PATH.",
+            "Install the Google Cloud SDK and ensure `gcloud` is on PATH, or run this "
+            "from a shell where it's already set up.",
+        )
+
+    active = subprocess.run(
+        ["gcloud", "auth", "list", "--filter=status:ACTIVE", "--format=value(account)"],
+        capture_output=True, text=True,
+    )
+    if active.returncode != 0:
+        raise EnvironmentIssue(
+            f"`gcloud auth list` failed: {active.stderr.strip()}",
+            "Run `gcloud auth login` (or `gcloud auth application-default login`) to authenticate, "
+            "then retry.",
+        )
+    if not active.stdout.strip():
+        raise EnvironmentIssue(
+            "No active gcloud account. `gcloud auth list` returned no ACTIVE account.",
+            "Run `gcloud auth login` to authenticate, then retry.",
+        )
+
+    token_result = subprocess.run(["gcloud", "auth", "print-access-token"], capture_output=True, text=True)
+    if token_result.returncode != 0:
+        raise EnvironmentIssue(
+            f"`gcloud auth print-access-token` failed: {token_result.stderr.strip()}",
+            "Your gcloud session may be expired or misconfigured. Run `gcloud auth login` again.",
+        )
+    return token_result.stdout.strip()
 
 
 def _get_json(url: str, token: str) -> dict:
     req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
-    with urllib.request.urlopen(req) as resp:
-        return json.loads(resp.read())
+    try:
+        with urllib.request.urlopen(req) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        raise _classify_http_error(e, url) from e
+    except urllib.error.URLError as e:
+        raise EnvironmentIssue(
+            f"Network error calling {url}: {e.reason}",
+            "Check network/VPN connectivity to *.googleapis.com from this shell.",
+        ) from e
 
 
 def _post_json(url: str, token: str, body: dict) -> dict:
@@ -277,8 +336,33 @@ def _post_json(url: str, token: str, body: dict) -> dict:
         url, data=data, method="POST",
         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(req) as resp:
-        return json.loads(resp.read())
+    try:
+        with urllib.request.urlopen(req) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        raise _classify_http_error(e, url) from e
+    except urllib.error.URLError as e:
+        raise EnvironmentIssue(
+            f"Network error calling {url}: {e.reason}",
+            "Check network/VPN connectivity to *.googleapis.com from this shell.",
+        ) from e
+
+
+def _classify_http_error(e: "urllib.error.HTTPError", url: str) -> Exception:
+    body = e.read().decode(errors="replace") if e.fp else ""
+    if e.code == 401:
+        return EnvironmentIssue(
+            f"401 Unauthorized calling {url}: {body[:300]}",
+            "Your gcloud access token is invalid or expired. Run `gcloud auth login` again.",
+        )
+    if e.code == 403:
+        return EnvironmentIssue(
+            f"403 Permission denied calling {url}: {body[:300]}",
+            "The authenticated gcloud account lacks IAM permission on this project "
+            "(needs at least 'Monitoring Viewer' and 'Logging Viewer'). Ask a project "
+            "admin to grant it, or switch accounts with `gcloud auth login`.",
+        )
+    return ApiUsageIssue(f"HTTP {e.code} calling {url}: {body[:300]}")
 
 
 # Known GCP error-message patterns -> (what it means, the concrete fix).
@@ -362,43 +446,75 @@ def _diagnose_audit_log_failures(project: str, name_filter: str, token: str) -> 
         grouped[key]["first_seen"] = min(grouped[key]["first_seen"], ts)
         grouped[key]["last_seen"] = max(grouped[key]["last_seen"], ts)
     return list(grouped.values())
+
+
+def _print_environment_issue(e: EnvironmentIssue) -> None:
+    print("\n" + "=" * 70)
+    print("⚠️  VERIFICATION COULD NOT RUN — environment/auth problem")
+    print("This is NOT a verdict on the deployment/config — the check itself")
+    print("could not execute. Do not report '0 found' as a result.")
+    print("=" * 70)
+    print(f"Problem:     {e.message}")
+    print(f"Remediation: {e.remediation}")
+
+
+def _print_api_usage_issue(e: ApiUsageIssue) -> None:
+    print("\n" + "=" * 70)
+    print("⚠️  VERIFICATION COULD NOT RUN — API/usage error (not auth, not a verdict)")
+    print("Likely a bad argument (e.g. wrong --project) rather than a deployment result.")
+    print("=" * 70)
+    print(f"Problem: {e}")
+
+
 def cmd_verify(args: argparse.Namespace) -> None:
-    token = _access_token()
+    try:
+        token = _preflight_gcloud_auth()
+    except EnvironmentIssue as e:
+        _print_environment_issue(e)
+        sys.exit(2)  # distinct exit code: inconclusive, not pass/fail
+
     name_filter = args.display_name_contains
 
-    print(f"=== Alert policies matching {name_filter!r} in {args.project} ===")
-    url = (
-        f"https://monitoring.googleapis.com/v3/projects/{args.project}/alertPolicies"
-        f"?filter=displayName:%22{name_filter}%22"
-    )
-    data = _get_json(url, token)
-    policies = data.get("alertPolicies", [])
-    print(f"{len(policies)} matching")
-    for p in policies:
-        print(" -", p.get("displayName"), "| mutatedBy:", p.get("mutatedBy"))
+    try:
+        print(f"=== Alert policies matching {name_filter!r} in {args.project} ===")
+        url = (
+            f"https://monitoring.googleapis.com/v3/projects/{args.project}/alertPolicies"
+            f"?filter=displayName:%22{name_filter}%22"
+        )
+        data = _get_json(url, token)
+        policies = data.get("alertPolicies", [])
+        print(f"{len(policies)} matching")
+        for p in policies:
+            print(" -", p.get("displayName"), "| mutatedBy:", p.get("mutatedBy"))
 
-    print(f"\n=== Dashboards matching {name_filter!r} in {args.project} ===")
-    url = f"https://monitoring.googleapis.com/v1/projects/{args.project}/dashboards"
-    data = _get_json(url, token)
-    dashes = [d for d in data.get("dashboards", []) if name_filter.lower() in (d.get("displayName") or "").lower()]
-    print(f"{len(dashes)} matching")
-    for d in dashes:
-        print(" -", d.get("displayName"))
+        print(f"\n=== Dashboards matching {name_filter!r} in {args.project} ===")
+        url = f"https://monitoring.googleapis.com/v1/projects/{args.project}/dashboards"
+        data = _get_json(url, token)
+        dashes = [d for d in data.get("dashboards", []) if name_filter.lower() in (d.get("displayName") or "").lower()]
+        print(f"{len(dashes)} matching")
+        for d in dashes:
+            print(" -", d.get("displayName"))
 
-    print(f"\n=== Recent failed Create* attempts in Cloud Audit Logs (last 2 days) ===")
-    findings = _diagnose_audit_log_failures(args.project, name_filter, token)
-    if not findings:
-        if not policies and not dashes:
-            print(
-                "No failed Create* attempts found either. Likely the pipeline hasn't "
-                "run yet (or hasn't reached GCP) rather than failed at the GCP API layer."
-            )
-        else:
-            print("No failed Create* attempts found.")
-    for f in findings:
-        print(f" - \"{f['display_name']}\" | {f['attempts']}x attempt(s), {f['first_seen']} -> {f['last_seen']} | {f['principal']}")
-        print(f"   error: {f['error_message']}")
-        print(f"   fix:   {f['suggested_fix']}")
+        print(f"\n=== Recent failed Create* attempts in Cloud Audit Logs (last 2 days) ===")
+        findings = _diagnose_audit_log_failures(args.project, name_filter, token)
+        if not findings:
+            if not policies and not dashes:
+                print(
+                    "No failed Create* attempts found either. Likely the pipeline hasn't "
+                    "run yet (or hasn't reached GCP) rather than failed at the GCP API layer."
+                )
+            else:
+                print("No failed Create* attempts found.")
+        for f in findings:
+            print(f" - \"{f['display_name']}\" | {f['attempts']}x attempt(s), {f['first_seen']} -> {f['last_seen']} | {f['principal']}")
+            print(f"   error: {f['error_message']}")
+            print(f"   fix:   {f['suggested_fix']}")
+    except EnvironmentIssue as e:
+        _print_environment_issue(e)
+        sys.exit(2)
+    except ApiUsageIssue as e:
+        _print_api_usage_issue(e)
+        sys.exit(3)  # distinct exit code: bad usage, not pass/fail
 
     if args.chg:
         print(f"\n=== SRE Advisor analysis for {args.chg} ===")
@@ -408,10 +524,24 @@ def cmd_verify(args: argparse.Namespace) -> None:
             req = urllib.request.Request(sre_url)
             with urllib.request.urlopen(req, timeout=30) as resp:
                 print(resp.read().decode())
-        except Exception as e:  # noqa: BLE001 - surface any network/auth error to the agent
-            print(f"SRE Advisor request failed: {e}")
-            print("(SRE Advisor may require SSO/VPN access not available from this shell — "
-                  "try the UI instead: https://sre-advisor-ui-sre-advisor.apps.dev-01.us-central1.dev.sabre-gcp.com/)")
+        except urllib.error.HTTPError as e:
+            body = e.read().decode(errors="replace") if e.fp else ""
+            if e.code in (401, 403):
+                _print_environment_issue(EnvironmentIssue(
+                    f"SRE Advisor returned {e.code}: {body[:300]}",
+                    "SRE Advisor needs Sabre SSO/VPN access from this shell — this is an "
+                    "environment/auth gap, not a verdict on the change. Try the UI instead: "
+                    "https://sre-advisor-ui-sre-advisor.apps.dev-01.us-central1.dev.sabre-gcp.com/",
+                ))
+            else:
+                print(f"SRE Advisor request failed: HTTP {e.code}: {body[:300]}")
+        except urllib.error.URLError as e:
+            _print_environment_issue(EnvironmentIssue(
+                f"Network error calling SRE Advisor: {e.reason}",
+                "SRE Advisor is only reachable from Sabre's internal network/VPN — this is an "
+                "environment gap, not a verdict on the change. Try the UI instead: "
+                "https://sre-advisor-ui-sre-advisor.apps.dev-01.us-central1.dev.sabre-gcp.com/",
+            ))
 
 
 def cmd_check_refresh(args: argparse.Namespace) -> None:

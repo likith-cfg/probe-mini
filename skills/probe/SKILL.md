@@ -33,16 +33,26 @@ explicitly tell the user docs are fresh (age in days) before proceeding.
 
 ## 1. Gather the required facts before generating anything
 
-Ask the user (or infer from the target repo, e.g. `pom.xml`/`build.gradle`,
-a `service-specific.yaml`, or Terraform `tfvars`) for:
+**Always ask the user directly for every field below. Never infer, guess,
+or silently pull values from the target repo (`pom.xml`/`build.gradle`,
+a `service-specific.yaml`, Terraform `tfvars`, etc.), even if signals for
+them are clearly present in the codebase.** If you notice a signal in the
+repo that suggests an answer, you may mention it to the user as a
+suggestion, but you must still ask them to explicitly confirm or override
+it before using it — never proceed on inference alone.
 
-- `app_name` / `project_name` (k8s namespace — confirm, don't assume)
+Ask the user for:
+
+- `app_name` / `project_name` (k8s namespace — ask explicitly, don't assume)
 - Whether the service has an HTTP server, and any downstream HTTP/gRPC/
   PubSub/MOM/Redis dependencies (drives circuit-breaker alerts, see
   `docs/baseline/gcp-application-metrics.md` for the `<type>-cb-<name>`
   naming convention)
-- `metric_stack`: `gmp` unless the codebase clearly uses classic Stackdriver
-  metrics (check for `management.stackdriver.metrics.export.metric-type-prefix`)
+- `metric_stack`: ask the user whether this service is on `gmp` or classic
+  Stackdriver metrics — do not silently decide this by scanning the repo
+  for `management.stackdriver.metrics.export.metric-type-prefix` or similar
+  config. If you spot such config, point it out to the user as a hint, but
+  still have them confirm which stack applies.
 - ServiceNow fields: `u_service`, `u_assignment_group`, `u_kb_article`
   (a REAL `KB########` number — see `docs/baseline/standards-runbooks.md`.
   **Never invent a real-looking KB number.** If the user has none yet, use

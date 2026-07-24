@@ -126,3 +126,25 @@ Requirements before this works:
 4. If you found a real error (Layer 3's status message, or an audit
    violation from the `probe` skill), **propose and, with confirmation,
    apply the fix** — don't just report the problem and stop.
+
+## Exit codes: distinguish "no verdict" from "pass/fail"
+
+`scripts/probe.py verify` uses distinct exit codes so you never mistake a
+broken check for a real result:
+
+- `0` — the check ran to completion. This is a real verdict (whatever it
+  printed — found/not-found, diagnosed failure, etc.) — safe to report as-is.
+- `2` — **environment/auth problem** (`gcloud` missing, not logged in,
+  expired/invalid token, missing IAM role, no network/VPN). The check
+  itself could not run. **Never report this as "0 found" or "verification
+  passed/failed"** — tell the user verification was inconclusive and relay
+  the printed remediation (e.g. re-run `gcloud auth login`, request the
+  missing IAM role, connect to VPN).
+- `3` — **API/usage error** (e.g. a bad `--project` value returning HTTP
+  404) — not an auth problem, not a deployment verdict either. Tell the
+  user to double-check the argument they gave you (usually `--project` or
+  `--display-name-contains`) rather than treating it as a failed deployment.
+
+If you ever see exit code `2` or `3`, do not proceed to interpret "0
+matching" as a real answer — surface the printed banner's Problem/
+Remediation instead and ask the user to resolve it before re-running.
