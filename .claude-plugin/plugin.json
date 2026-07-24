@@ -1,0 +1,9 @@
+{
+  "name": "probe",
+  "version": "0.1.0",
+  "description": "Generate/audit GCP monitoring config (alert policies, dashboards, service monitors) against Sabre standards, then verify a real deployment succeeded via GCP Monitoring API and SRE Advisor.",
+  "author": {
+    "name": "Sabre Internal",
+    "url": "https://github.com/sabre-internal"
+  }
+}

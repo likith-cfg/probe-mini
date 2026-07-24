@@ -1,0 +1,2 @@
+description = "Generate and audit GCP monitoring config (alert policies, dashboards, service monitors) for a Sabre GKE service."
+prompt = "Use the probe skill to generate and audit GCP monitoring config for the service described in $ARGUMENTS. Ask for any missing required fields (app_name, project_name, u_service, u_assignment_group, u_kb_article, notification_channel) before generating."

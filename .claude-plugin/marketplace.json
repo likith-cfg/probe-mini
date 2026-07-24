@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "probe-mini",
+  "description": "GCP observability config generator, auditor, and post-deploy verifier for Sabre GKE/GCP services.",
+  "owner": {
+    "name": "Sabre Internal",
+    "url": "https://github.com/sabre-internal"
+  },
+  "plugins": [
+    {
+      "name": "probe",
+      "description": "Generate/audit GCP alert policies, dashboards, service monitors, and verify a deployment's success via GCP Monitoring + SRE Advisor.",
+      "source": "./",
+      "category": "productivity"
+    }
+  ]
+}

@@ -1,0 +1,74 @@
+# Documentation source registry for the probe-mini plugin.
+# The `probe` skill checks docs/.last_refresh.json — if last_refresh is missing
+# or more than `refresh_interval_days` old, it re-fetches every URL below
+# (via the agent's own web-fetch tool, since gitdocs requires an
+# authenticated session that a bare script can't replicate) and rewrites
+# docs/baseline/<slug>.md, then updates the timestamp.
+#
+# Fields:
+#   slug        : local filename stem -> docs/baseline/<slug>.md
+#   url         : gitdocs URL (fetch with ?format=markdown)
+#   description : why this doc matters / what it drives
+
+refresh_interval_days: 30
+
+sources:
+  - slug: standards-alerts
+    url: "https://gitdocs.sabre.com/gitdocs/observability-docs/observability-standards/alerts.html?format=markdown"
+    description: >
+      Canonical Sabre alerting standards (Observability team, supersedes the
+      older syseng metrics doc for alerting policy). All alerts must be
+      recorded in SNOW. Discourages CPU/GC-only alerts unless tied to an
+      SLO — only alert on customer-facing impact.
+
+  - slug: standards-runbooks
+    url: "https://gitdocs.sabre.com/gitdocs/observability-docs/observability-standards/runbooks.html?format=markdown"
+    description: >
+      Runbooks are mandatory KB articles created in ServiceNow (Knowledge
+      Base -> Create New) in cooperation with dev+SRE teams. This is the
+      real source of a valid u_kb_article value — never invent one.
+
+  - slug: standards-dashboards
+    url: "https://gitdocs.sabre.com/gitdocs/observability-docs/observability-standards/dashboards.html?format=markdown"
+    description: Dashboard standards from the Observability team.
+
+  - slug: standards-metrics
+    url: "https://gitdocs.sabre.com/gitdocs/observability-docs/observability-standards/metrics.html?format=markdown"
+    description: Metrics standards from the Observability team.
+
+  - slug: standards-slo
+    url: "https://gitdocs.sabre.com/gitdocs/observability-docs/observability-standards/slo.html?format=markdown"
+    description: SLO definition guidance, referenced by alerting standards.
+
+  - slug: gcp-application-metrics
+    url: "https://gitdocs.sabre.com/gitdocs/syseng_team_page/main/how_to_guides/GCP_ApplicationMetrics.html?format=markdown"
+    description: >
+      Master metric-naming reference: completion.code.category tag,
+      circuit-breaker naming <type>-cb-<name>, GMP metric catalog
+      (HTTP/gRPC/PubSub/MOM/JVM/Tomcat/HikariCP/cache), cardinality rules.
+
+  - slug: metrics-starter-gmp
+    url: "https://gitdocs.sabre.com/gitdocs/ngp-starters/how-to-guides/metrics-starter-GMP.html?format=markdown"
+    description: >
+      GMP (Google-Managed Prometheus) integration: metric-type-prefix,
+      snake_case naming, /gauge//histogram suffixes, resource type
+      prometheus_target. MetricDescriptors NOT supported under GMP.
+
+  - slug: sre-advisor-index
+    url: "https://gitdocs.sabre.com/gitdocs/sre-advisor/index.html?format=markdown"
+    description: >
+      SRE Advisor overview: correlates a SNOW Change's commits with GCP
+      Monitoring metric anomalies and produces an LLM (Gemini) report on
+      whether a deployment degraded metrics. HTTP API + UI. THIS is the
+      "did our change succeed or fail" verification tool.
+
+  - slug: sre-advisor-config
+    url: "https://gitdocs.sabre.com/gitdocs/sre-advisor/config.html?format=markdown"
+    description: >
+      sre-advisor.json schema for defining custom PromQL/MQL queries per
+      repo, so SRE Advisor checks metrics relevant to the actual service
+      instead of only generic CPU/memory.
+
+  - slug: sre-advisor-technical
+    url: "https://gitdocs.sabre.com/gitdocs/sre-advisor/technical.html?format=markdown"
+    description: Detailed SRE Advisor workflow, limitations, timing windows.
