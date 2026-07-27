@@ -1,4 +1,4 @@
 __pycache__/
 *.pyc
 docs/.last_refresh.json
-docs/baseline/
+docs/baseline/*

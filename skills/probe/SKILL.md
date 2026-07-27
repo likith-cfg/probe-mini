@@ -65,23 +65,33 @@ for each artifact before editing it. Do not load unrelated implementation docs.
 
 ## 2. Gather the required facts before generating anything
 
-**Always ask the user directly for every field below. Never infer, guess,
-or silently pull values from the target repo (`pom.xml`/`build.gradle`,
-a `service-specific.yaml`, Terraform `tfvars`, etc.), even if signals for
-them are clearly present in the codebase.** If you notice a signal in the
-repo that suggests an answer, you may mention it to the user as a
-suggestion, but you must still ask them to explicitly confirm or override
-it before using it — never proceed on inference alone.
+**Always get the user's explicit confirmation for every field below. Never
+infer, guess, or silently use repository values.** The only proactive lookup
+is the bounded `metric_stack` evidence check below. Do not broadly scan the
+repository. Evidence supports a suggestion; it never replaces confirmation.
 
 Ask the user for:
 
 - Whether the service has an HTTP server, and any downstream HTTP/gRPC/
   PubSub/MOM/Redis dependencies
-- `metric_stack`: ask the user whether this service is on `gmp` or classic
-  Stackdriver metrics — do not silently decide this by scanning the repo
-  for `management.stackdriver.metrics.export.metric-type-prefix` or similar
-  config. If you spot such config, point it out to the user as a hint, but
-  still have them confirm which stack applies.
+- `metric_stack`: inspect only these predefined locations, in order, and stop
+  at the first conclusive signal:
+  1. Existing monitoring manifests in the target repo's conventional
+    monitoring directory. `PodMonitoring` or `ServiceMonitor` suggests
+    `gmp`.
+  2. `src/main/resources/application*.yml`, `application*.yaml`, and
+    `application*.properties`, plus an existing `service-specific.yaml`.
+    `/actuator/prometheus` or Prometheus export settings suggest `gmp`;
+    `management.stackdriver.metrics.export.*` suggests `stackdriver`.
+  3. Root `pom.xml`, `build.gradle`, or `build.gradle.kts`.
+    `micrometer-registry-prometheus` suggests `gmp` and
+    `micrometer-registry-stackdriver` suggests `stackdriver`.
+  Read only the matching lines or smallest useful snippet. Do not search
+  elsewhere unless the user asks. Show the evidence and source file, then ask
+  the user to confirm the suggested stack or choose the other one. If signals
+  conflict, present both without a recommendation. If no signal is found, ask
+  the user to choose `gmp` or classic `stackdriver` without suggesting a
+  default.
 - ServiceNow fields: `u_service`, `u_assignment_group`, `u_kb_article`
   (a real `KB########` number). **Never invent a real-looking KB number.**
   If the user has none yet, use
