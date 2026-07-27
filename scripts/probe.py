@@ -226,8 +226,11 @@ def cmd_audit(args: argparse.Namespace) -> None:
                     missing = REQUIRED_ALERT_DOC_FIELDS - set(parsed.keys())
                     if missing:
                         errors.append(f"{path}: missing-alert-doc-field — missing {sorted(missing)}")
-                    if str(parsed.get("u_kb_article", "")).strip() in ("", "CHANGE_ME"):
-                        warnings.append(f"{path}: placeholder-kb-article — u_kb_article is empty/CHANGE_ME, needs a real ServiceNow KB number")
+                    if str(parsed.get("u_kb_article", "")).strip() in ("", "CHANGE_ME", "KB0000000"):
+                        warnings.append(
+                            f"{path}: placeholder-kb-article — u_kb_article is empty or a placeholder; "
+                            "needs a real ServiceNow KB number"
+                        )
                     severity = str(parsed.get("severity", ""))
                     if severity not in {"1", "2", "3", "4", "5"}:
                         errors.append(f"{path}: invalid-severity — severity {severity!r} not in 1..5")
@@ -256,7 +259,7 @@ def cmd_audit(args: argparse.Namespace) -> None:
                     if ("cpu" in lowered or "gc_pause" in lowered) and "slo" not in raw.lower():
                         warnings.append(
                             f"{path}: cpu-gc-alert-without-slo — CPU/GC-based alert with no SLO link mentioned; "
-                            "observability-standards/alerts.md discourages this unless tied to an SLO"
+                            "tie this alert to a customer-impact SLO before deploying it"
                         )
 
     print(f"AUDIT: {directory}")
@@ -608,7 +611,7 @@ def cmd_check_refresh(args: argparse.Namespace) -> None:
     else:
         print("last_refresh=null (never refreshed)")
     print("STALE" if stale else "FRESH")
-    sys.exit(0 if stale else 1)  # exit 0 (stale, action needed) / 1 (fresh, nothing to do)
+    sys.exit(0 if stale else 1)  
 
 
 def cmd_mark_refreshed(args: argparse.Namespace) -> None:

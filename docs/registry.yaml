@@ -1,74 +1,142 @@
-# Documentation source registry for the probe-mini plugin.
-# The `probe` skill checks docs/.last_refresh.json — if last_refresh is missing
-# or more than `refresh_interval_days` old, it re-fetches every URL below
-# (via the agent's own web-fetch tool, since gitdocs requires an
-# authenticated session that a bare script can't replicate) and rewrites
-# docs/baseline/<slug>.md, then updates the timestamp.
-#
-# Fields:
-#   slug        : local filename stem -> docs/baseline/<slug>.md
-#   url         : gitdocs URL (fetch with ?format=markdown)
-#   description : why this doc matters / what it drives
+# Source manifest and request-time routing index.
+# description tells the agent when to open docs/baseline/<slug>.md.
 
 refresh_interval_days: 30
 
 sources:
-  - slug: standards-alerts
-    url: "https://gitdocs.sabre.com/gitdocs/observability-docs/observability-standards/alerts.html?format=markdown"
+  # ── ALERTS ───────────────────────────────────────────────────────────────
+  - category: alerts
+    slug: gcp-foundation-alerts
+    url: "https://gitdocs.sabre.com/gitdocs/gcp-foundation/concepts/alerts.html?format=markdown"
     description: >
-      Canonical Sabre alerting standards (Observability team, supersedes the
-      older syseng metrics doc for alerting policy). All alerts must be
-      recorded in SNOW. Discourages CPU/GC-only alerts unless tied to an
-      SLO — only alert on customer-facing impact.
+      Use for Sabre GKE MonitoringAlertPolicy CRD/Ansible YAML, repository
+      placement, SNOW notification channels or documentation JSON, missing
+      metric behavior, trigger duration, and alert deployment errors.
 
-  - slug: standards-runbooks
-    url: "https://gitdocs.sabre.com/gitdocs/observability-docs/observability-standards/runbooks.html?format=markdown"
+  - category: alerts
+    slug: alerts-terraform
+    url: "https://docs.cloud.google.com/monitoring/alerts/terraform"
     description: >
-      Runbooks are mandatory KB articles created in ServiceNow (Knowledge
-      Base -> Create New) in cooperation with dev+SRE teams. This is the
-      real source of a valid u_kb_article value — never invent one.
+      Use for native Google Terraform Provider alert policies or notification
+      channels (`google_monitoring_alert_policy` and
+      `google_monitoring_notification_channel`), IAM prerequisites, repeated
+      notifications, and `terraform apply`; not for Sabre GKE CRD YAML.
 
-  - slug: standards-dashboards
-    url: "https://gitdocs.sabre.com/gitdocs/observability-docs/observability-standards/dashboards.html?format=markdown"
-    description: Dashboard standards from the Observability team.
+  # ── DASHBOARDS ───────────────────────────────────────────────────────────
+  - category: dashboards
+    slug: gcp-foundation-dashboards
+    url: "https://gitdocs.sabre.com/gitdocs/gcp-foundation/concepts/dashboards.html?format=markdown"
+    description: >
+      Use for Sabre GKE MonitoringDashboard CRD/Ansible YAML, repository
+      placement, grid/mosaic layouts, widgets, legends, multi-cluster naming,
+      or dashboard deployment errors and limits.
 
-  - slug: standards-metrics
-    url: "https://gitdocs.sabre.com/gitdocs/observability-docs/observability-standards/metrics.html?format=markdown"
-    description: Metrics standards from the Observability team.
+  # ── LOGS ─────────────────────────────────────────────────────────────────
+  - category: logs
+    slug: standards-logs
+    url: "https://gitdocs.sabre.com/gitdocs/observability-docs/observability-standards/logs.html?format=markdown"
+    description: >
+      Use for application log structure and standard labels, asynchronous
+      logging, PCI/PII masking or access control, Cloud Logging ingestion
+      cost, GKE log optimization, log sinks, or logs versus log-based metrics.
 
-  - slug: standards-slo
-    url: "https://gitdocs.sabre.com/gitdocs/observability-docs/observability-standards/slo.html?format=markdown"
-    description: SLO definition guidance, referenced by alerting standards.
-
-  - slug: gcp-application-metrics
+  # ── METRICS ──────────────────────────────────────────────────────────────
+  - category: metrics
+    slug: gcp-application-metrics
     url: "https://gitdocs.sabre.com/gitdocs/syseng_team_page/main/how_to_guides/GCP_ApplicationMetrics.html?format=markdown"
     description: >
-      Master metric-naming reference: completion.code.category tag,
-      circuit-breaker naming <type>-cb-<name>, GMP metric catalog
-      (HTTP/gRPC/PubSub/MOM/JVM/Tomcat/HikariCP/cache), cardinality rules.
+      Use to select concrete Micrometer/GMP metric names and tags for workload
+      (HTTP, gRPC, PubSub, MOM, scheduled tasks), dependency (Resilience4j
+      circuit breakers, HTTP/gRPC clients, Redis, Datastore, GCS), or resource
+      (GKE, JVM, executors, Tomcat, HikariCP, cache) alerts and dashboards.
 
-  - slug: metrics-starter-gmp
+  - category: metrics
+    slug: standards-metrics
+    url: "https://gitdocs.sabre.com/gitdocs/observability-docs/observability-standards/metrics.html?format=markdown"
+    description: >
+      Use for policy or audit decisions about GMP and PromQL adoption, metric
+      versus log/trace choice, label/cardinality and cost limits, client IDs,
+      HTTP URI templates, platform versus custom metrics, or recommended
+      metric categories; not for starter setup code.
+
+  - category: metrics
+    slug: metrics-starter-gmp
     url: "https://gitdocs.sabre.com/gitdocs/ngp-starters/how-to-guides/metrics-starter-GMP.html?format=markdown"
     description: >
-      GMP (Google-Managed Prometheus) integration: metric-type-prefix,
-      snake_case naming, /gauge//histogram suffixes, resource type
-      prometheus_target. MetricDescriptors NOT supported under GMP.
+      Use to enable or migrate Metrics NGP Starter to GMP, translate
+      Stackdriver names/resources to `prometheus.googleapis.com` and
+      `prometheus_target`, query histogram `_count/_sum/_bucket` series, remove
+      MetricDescriptors, or fix missing-metric validation in PromQL alerts.
 
-  - slug: sre-advisor-index
+  - category: metrics
+    slug: metrics-starter-concept
+    url: "https://gitdocs.sabre.com/gitdocs/ngp-starters/concepts/metrics-starter.html?format=markdown"
+    description: >
+      Use when designing a metric's name, meter type, labels, cardinality, or
+      startup value, or deciding whether a single event belongs in logs;
+      not for Micrometer implementation examples.
+
+  - category: metrics
+    slug: metrics-starter-default-usage
+    url: "https://gitdocs.sabre.com/gitdocs/ngp-starters/how-to-guides/metrics-starter-default-usage.html?format=markdown"
+    description: >
+      Use to enable or troubleshoot built-in HTTP client (`RestTemplateBuilder`),
+      gRPC server/client (`@Service`, Spring gRPC, or interceptor), or Couchbase
+      instrumentation, including URI-variable cardinality issues.
+
+  - category: metrics
+    slug: metrics-starter-custom-metrics
+    url: "https://gitdocs.sabre.com/gitdocs/ngp-starters/how-to-guides/metrics-starter-custom-metrics.html?format=markdown"
+    description: >
+      Use when implementing a custom/business metric in Java with Micrometer
+      `MeterRegistry`, Counter, Gauge, Timer, DistributionSummary, or
+      LongTaskTimer after the metric design is already decided.
+
+  - category: metrics
+    slug: metrics-starter-installation
+    url: "https://gitdocs.sabre.com/gitdocs/ngp-starters/how-to-guides/metrics-starter-installation.html?format=markdown"
+    description: >
+      Use when first adding the Metrics NGP Starter Maven dependency and
+      required Spring/GCP properties, CXF dependencies, or Spring AI/LangGraph
+      agent and token-usage metrics; not for post-install tuning.
+
+  - category: metrics
+    slug: metrics-starter-customization
+    url: "https://gitdocs.sabre.com/gitdocs/ngp-starters/how-to-guides/metrics-starter-customization.html?format=markdown"
+    description: >
+      Use to tune an installed starter's actuator port/endpoints, Prometheus
+      registry, HTTP/gRPC/CXF percentiles or histogram buckets, application
+      error headers, HTTP URI-tag limit, or Couchbase gauge cache.
+
+  - category: metrics
+    slug: ops-agent-prometheus
+    url: "https://docs.cloud.google.com/monitoring/agent/ops-agent/prometheus"
+    description: >
+      Use only to configure the Google Cloud Ops Agent Prometheus receiver on
+      Compute Engine: scrape configs, receiver pipelines, relabeling, VM meta
+      labels, ingestion verification, and sample/cardinality cost; not for GKE.
+
+  # ── VERIFICATION (SRE Advisor) ───────────────────────────────────────────
+  - category: verification
+    slug: sre-advisor-index
     url: "https://gitdocs.sabre.com/gitdocs/sre-advisor/index.html?format=markdown"
     description: >
-      SRE Advisor overview: correlates a SNOW Change's commits with GCP
-      Monitoring metric anomalies and produces an LLM (Gemini) report on
-      whether a deployment degraded metrics. HTTP API + UI. THIS is the
-      "did our change succeed or fail" verification tool.
+      Use to run or interpret SRE Advisor for a SNOW Change or commit list via
+      UI/API, understand report fields and prerequisites, add a custom prompt,
+      or decide whether environment/change timing makes analysis reliable.
 
-  - slug: sre-advisor-config
+  - category: verification
+    slug: sre-advisor-config
     url: "https://gitdocs.sabre.com/gitdocs/sre-advisor/config.html?format=markdown"
     description: >
-      sre-advisor.json schema for defining custom PromQL/MQL queries per
-      repo, so SRE Advisor checks metrics relevant to the actual service
-      instead of only generic CPU/memory.
+      Use to create or validate repository-root `sre-advisor.json`: GKE versus
+      Terraform defaults, env/project overrides, metric project/IAM, MQL or
+      PromQL queries, variables, step intervals, and post-change delays.
 
-  - slug: sre-advisor-technical
+  - category: verification
+    slug: sre-advisor-technical
     url: "https://gitdocs.sabre.com/gitdocs/sre-advisor/technical.html?format=markdown"
-    description: Detailed SRE Advisor workflow, limitations, timing windows.
+    description: >
+      Use to investigate SRE Advisor internals or unexplained results: SNOW and
+      GitHub data flow, 48h-before/2h-after anomaly windows, prediction model,
+      patch grouping, Gemini retries/token limits, and technical limitations.
