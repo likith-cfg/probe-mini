@@ -476,7 +476,7 @@ def cmd_verify(args: argparse.Namespace) -> None:
         token, _account = _preflight_gcloud_auth()
     except EnvironmentIssue as e:
         _print_environment_issue(e)
-        sys.exit(2)  # distinct exit code: inconclusive, not pass/fail
+        sys.exit(2)  # inconclusive, not pass/fail
 
     name_filter = args.display_name_contains
 

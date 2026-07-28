@@ -66,9 +66,10 @@ for each artifact before editing it. Do not load unrelated implementation docs.
 ## 2. Gather the required facts before generating anything
 
 **Always get the user's explicit confirmation for every field below. Never
-infer, guess, or silently use repository values.** The only proactive lookup
-is the bounded `metric_stack` evidence check below. Do not broadly scan the
-repository. Evidence supports a suggestion; it never replaces confirmation.
+silently use repository values.** Proactive lookups are limited to the
+`service_root`, environment, and `metric_stack` checks below. Do not broadly
+scan the repository. Evidence supports a suggestion; it never replaces
+confirmation.
 
 Ask the user for:
 
@@ -78,6 +79,16 @@ Ask the user for:
   locations are possible, ask the user for the service path before inspecting
   service files (for example `services/dcs-provider`). Scope every repository
   lookup below to this directory and never search sibling services.
+- `monitoring_scope`: ask whether the generated monitoring config should be
+  shared by all environments or created for one specific environment. Build
+  the environment choices only from exact names found in the service's root
+  `BUILD` deployment metadata and existing
+  `configuration/vars/app/env/<environment>` directories. Preserve spelling,
+  case, and punctuation exactly (for example `GCP-Dev`, never `dev` or
+  `gcp-dev`). Do not invent or normalize names. If the user chooses a specific
+  environment, ask them to select one of those exact names. If the two sources
+  disagree, show both sets and ask which existing directory convention to
+  follow before generating.
 - Whether the service has an HTTP server, and any downstream HTTP/gRPC/
   PubSub/MOM/Redis dependencies
 - `metric_stack`: inspect only these predefined locations, in order, and stop
@@ -157,11 +168,16 @@ ignoring them — these map to real standards violations, not lint noise.
 
 ## 7. Only after PASS, copy into the real repo
 
-Within the confirmed `service_root`, follow the target repo's own conventions
-for where monitoring config lives
-(e.g. `configuration/vars/app/common/monitoring/{alertpolicies,dashboards,
-servicemonitors}/`). Never `git`/`s2` commit or push without the user's
-explicit go-ahead — that's a shared-repo action, not yours to take alone.
+Within the confirmed `service_root`, follow the target repo's existing
+monitoring layout. For `monitoring_scope=shared`, use its common monitoring
+location (for example `configuration/vars/app/common/monitoring/`). For an
+environment-specific scope, use the exact selected environment directory (for
+example `configuration/vars/app/env/GCP-Dev/monitoring/`). Create files only
+for the confirmed scope; never duplicate shared config into every environment.
+Preserve the artifact subdirectories used by the repo, such as
+`alertpolicies`, `dashboards`, and `servicemonitors`. Never `git`/`s2` commit
+or push without the user's explicit go-ahead — that's a shared-repo action,
+not yours to take alone.
 
 This skill doesn't generate logging config. Answer logging questions from
 the source selected in step 1.

@@ -21,7 +21,7 @@ python3 scripts/probe.py verify --project <project-id> --display-name-contains <
 ```
 
 This calls the GCP Monitoring API directly (`alertPolicies`, `dashboards`)
-with `gcloud auth print-access-token` — no Armada/CI access needed, just a
+with `gcloud auth print-access-token`, requires just a
 bearer token. It tells you existence + `mutatedBy`/who last touched it. It
 does **not** tell you why something is missing.
 
@@ -63,20 +63,6 @@ fix comes back automatically, without needing Armada/CI access at all —
 Cloud Audit Logs already recorded the same error Armada showed the user,
 because both are just reporting the same underlying `gcloud`/Terraform
 provider API call's response.
-
-Known fixes currently in `KNOWN_FIXES` (extend this list whenever you
-diagnose a new failure mode — don't just fix-and-forget):
-- `"PromQL metric(s) are invalid"` → the query uses a `_count`/`_sum`
-  suffix derived from a Prometheus histogram (e.g. `http_server_requests_count`
-  off `http_server_requests/histogram`); GCP's alert-policy create-time
-  validator can't statically verify these and rejects with
-  `INVALID_ARGUMENT` even though the query is valid at evaluation time.
-  Fix: add `disableMetricValidation: true` to that condition. (Real example:
-  dcs-provider's "HTTP Workload Failures" alert, 2026-07-24 — 13 retries,
-  all identical error, fixed by adding this field. `probe`'s generator and
-  `audit` now default/check for this.)
-- `PERMISSION_DENIED` → deploying service account missing an IAM role.
-- notification channel not found → wrong/nonexistent channel resource name.
 
 If `scripts/probe.py verify` finds a failure with **no** matching
 `KNOWN_FIXES` entry, treat the raw `error_message` field as the ground

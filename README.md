@@ -32,14 +32,14 @@ refreshing is agent-driven, not a bare script).
 ## Install
 
 ```bash
-copilot plugin marketplace add sabre-internal/probe-mini
+copilot plugin marketplace add likith-cfg/probe-mini
 copilot plugin install probe@probe-mini
 ```
 
 Or interactively inside Copilot CLI:
 
 ```
-/plugin marketplace add sabre-internal/probe-mini
+/plugin marketplace add likith-cfg/probe-mini
 /plugin install probe@probe-mini
 ```
 
@@ -72,6 +72,13 @@ of known service configuration locations, suggests GMP or Stackdriver when
 the evidence is conclusive, and asks you to confirm the choice. Generated
 files stay in a staging directory until they pass audit and you approve
 copying them into the service repository.
+
+Probe also asks whether monitoring should be shared across environments or
+created for one environment. Environment choices come from the service's
+`BUILD` deployment metadata and `configuration/vars/app/env` directories and
+retain exact names such as `GCP-Dev`. Shared config is written once to the
+repository's common monitoring location; environment-specific config is
+written only under the selected environment.
 
 Audit existing monitoring config without generating anything:
 

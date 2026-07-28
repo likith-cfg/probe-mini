@@ -17,6 +17,8 @@ generates into a staging directory, audits the result, and shows you what it
 plans to copy before changing your service repository. In a single-service
 repository, Probe uses the current workspace directly. In a monorepo, it asks
 you for the service's repository-relative path before inspecting service files.
+Probe also asks whether monitoring is shared or environment-specific and keeps
+the repository's exact environment names, such as `GCP-Dev`.
 
 You can also audit existing monitoring config:
 
