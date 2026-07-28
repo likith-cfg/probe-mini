@@ -1,16 +1,34 @@
-# probe installed
+# Probe installed
 
-Try:
+Start with:
 
 ```
 /probe-help
 ```
 
-to see what's available, or jump straight in with:
+Generate and audit monitoring config for a service:
 
 ```
-/probe generate monitoring config for <your-service-name>
+/probe generate monitoring config for <service-name>
 ```
 
-Docs bundled at install time were fetched 2026-07-24 and self-refresh every
-30 days — the first time you run `/probe`, it'll tell you if they're stale.
+Describe what you need in plain language. Probe asks for any missing details,
+generates into a staging directory, audits the result, and shows you what it
+plans to copy before changing your service repository. In a single-service
+repository, Probe uses the current workspace directly. In a monorepo, it asks
+you for the service's repository-relative path before inspecting service files.
+
+You can also audit existing monitoring config:
+
+```
+/probe audit monitoring config in <directory>
+```
+
+Verify that deployed monitoring resources landed and work:
+
+```
+/probe-verify <GCP project ID> <service name>
+```
+
+Bundled Sabre standards refresh every 30 days. `/probe` reports whether they
+are current before using them.

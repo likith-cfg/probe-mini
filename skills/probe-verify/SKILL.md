@@ -1,7 +1,7 @@
 ---
 name: probe-verify
 description: >
-  Check whether a GCP monitoring config change (or a deployment in general)
+  Check whether a GCP monitoring config change
   actually succeeded or failed. Only invoked explicitly via the
   `/probe-verify` command — do not auto-trigger this from ambient mentions
   of deployments/failures in conversation.

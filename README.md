@@ -1,7 +1,7 @@
 # probe (probe-mini)
 
 A lightweight, standalone Copilot CLI plugin that generates and audits Sabre
-GCP observability config (alert policies, dashboards, service monitors) and
+GCP observability config (alert policies, dashboards, and PodMonitoring) and
 verifies whether a real deployment succeeded — using Sabre's actual
 standards docs and the real **SRE Advisor** service, not guesswork.
 
@@ -12,8 +12,8 @@ anywhere Copilot CLI runs.
 
 ## What it does
 
-- **`/probe`** — generate + audit alert policies / dashboards / service
-  monitors for a service, enforcing Sabre standards (required ServiceNow
+- **`/probe`** — generate and audit alert policies, dashboards, and
+  PodMonitoring for a service, enforcing Sabre standards (required ServiceNow
   doc fields, circuit-breaker naming, GMP vs MetricDescriptor rules,
   cardinality-risk checks, and the "no CPU/GC-only alerts unless SLO-tied"
   rule).
@@ -47,6 +47,44 @@ Commands are then available as `/probe`, `/probe-verify`, `/probe-help`
 (or namespaced as `/probe-mini:probe` etc., depending on your Copilot CLI
 version).
 
+## Use
+
+Start with the command reference:
+
+```text
+/probe-help
+```
+
+Generate and audit monitoring config:
+
+```text
+/probe generate monitoring config for <service-name>
+```
+
+In a repository containing one service, Probe uses the current workspace as
+the service root. In a monorepo, Probe asks for the service's
+repository-relative path before inspecting any files and never searches
+sibling services.
+
+Probe asks for missing service, dependency, ServiceNow, and notification
+details. To identify the metrics pipeline efficiently, it checks a small set
+of known service configuration locations, suggests GMP or Stackdriver when
+the evidence is conclusive, and asks you to confirm the choice. Generated
+files stay in a staging directory until they pass audit and you approve
+copying them into the service repository.
+
+Audit existing monitoring config without generating anything:
+
+```text
+/probe audit monitoring config in <directory>
+```
+
+Verify deployed resources and diagnose failures:
+
+```text
+/probe-verify <GCP project ID> <service name>
+```
+
 ## Requirements
 
 - Python 3.9+ with `pyyaml` (`pip install pyyaml` if missing).
@@ -66,17 +104,21 @@ python3 scripts/probe.py audit /tmp/my-svc-monitoring
 python3 scripts/probe.py verify --project my-gcp-project --display-name-contains my-svc
 ```
 
+For `generate`, `--project-name` currently means the Kubernetes namespace,
+not the GCP project ID. The local script writes to `--out`; repository
+placement and monorepo service selection are handled by the `/probe` agent.
+
 ## Layout
 
 ```
 .claude-plugin/       marketplace.json + plugin.json (Copilot CLI plugin manifest)
 plugin.yaml           provides_commands / provides_skills
-skills/probe/         generate + audit skill
+skills/probe/         guided generation + audit skill
 skills/probe-verify/  deployment verification skill
 skills/probe-help/    help skill
 commands/*.toml       slash-command wrappers
 scripts/probe.py      stdlib + pyyaml implementation (generate/audit/verify/refresh-state)
-docs/registry.yaml    list of gitdocs sources + refresh interval
+docs/registry.yaml    request-time source routing index + refresh interval
 docs/.last_refresh.json  refresh timestamp state
 docs/baseline/*.md    bundled standards snapshots (offline bootstrap)
 ```

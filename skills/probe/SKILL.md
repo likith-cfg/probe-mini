@@ -72,6 +72,12 @@ repository. Evidence supports a suggestion; it never replaces confirmation.
 
 Ask the user for:
 
+- `service_root`: the repository-relative directory containing the service.
+  If the workspace root clearly contains one service, use `.` without asking.
+  If it is a monorepo, the root is not itself a service, or multiple service
+  locations are possible, ask the user for the service path before inspecting
+  service files (for example `services/dcs-provider`). Scope every repository
+  lookup below to this directory and never search sibling services.
 - Whether the service has an HTTP server, and any downstream HTTP/gRPC/
   PubSub/MOM/Redis dependencies
 - `metric_stack`: inspect only these predefined locations, in order, and stop
@@ -151,7 +157,8 @@ ignoring them — these map to real standards violations, not lint noise.
 
 ## 7. Only after PASS, copy into the real repo
 
-Follow the target repo's own conventions for where monitoring config lives
+Within the confirmed `service_root`, follow the target repo's own conventions
+for where monitoring config lives
 (e.g. `configuration/vars/app/common/monitoring/{alertpolicies,dashboards,
 servicemonitors}/`). Never `git`/`s2` commit or push without the user's
 explicit go-ahead — that's a shared-repo action, not yours to take alone.

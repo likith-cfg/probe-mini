@@ -1,7 +1,7 @@
 name: probe
 version: 0.1.0
 description: GCP observability config generator/auditor/verifier for Sabre GKE services.
-author: Sabre Internal
+author: Likith Reddy
 provides_commands:
   - probe
   - probe-verify
