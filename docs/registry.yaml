@@ -115,28 +115,3 @@ sources:
       Use only to configure the Google Cloud Ops Agent Prometheus receiver on
       Compute Engine: scrape configs, receiver pipelines, relabeling, VM meta
       labels, ingestion verification, and sample/cardinality cost; not for GKE.
-
-  # ── VERIFICATION (SRE Advisor) ───────────────────────────────────────────
-  - category: verification
-    slug: sre-advisor-index
-    url: "https://gitdocs.sabre.com/gitdocs/sre-advisor/index.html?format=markdown"
-    description: >
-      Use to run or interpret SRE Advisor for a SNOW Change or commit list via
-      UI/API, understand report fields and prerequisites, add a custom prompt,
-      or decide whether environment/change timing makes analysis reliable.
-
-  - category: verification
-    slug: sre-advisor-config
-    url: "https://gitdocs.sabre.com/gitdocs/sre-advisor/config.html?format=markdown"
-    description: >
-      Use to create or validate repository-root `sre-advisor.json`: GKE versus
-      Terraform defaults, env/project overrides, metric project/IAM, MQL or
-      PromQL queries, variables, step intervals, and post-change delays.
-
-  - category: verification
-    slug: sre-advisor-technical
-    url: "https://gitdocs.sabre.com/gitdocs/sre-advisor/technical.html?format=markdown"
-    description: >
-      Use to investigate SRE Advisor internals or unexplained results: SNOW and
-      GitHub data flow, 48h-before/2h-after anomaly windows, prediction model,
-      patch grouping, Gemini retries/token limits, and technical limitations.

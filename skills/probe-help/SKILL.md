@@ -15,8 +15,10 @@ verifies Sabre GCP observability config.
 | Command | Skill | What it does |
 |---|---|---|
 | `/probe` | `probe` | Generate + audit alert policies/dashboards/service monitors from Sabre standards |
-| `/probe-verify` | `probe-verify` | Check if a config change / deployment actually landed and worked, layered: GCP API existence check → Cloud Audit Logs root-cause → SRE Advisor metric-correlation verdict |
+| `/probe-verify` | `probe-verify` | Ask for a change number (CHG), then get GCP Advisor's failure analysis directly |
 | `/probe-help` | `probe-help` | This message |
+
+GCP Advisor needs no browser login or API token.
 
 Docs are bundled in `docs/baseline/` and refresh from gitdocs.sabre.com
 every 30 days (tracked in `docs/.last_refresh.json`). Sources are grouped
@@ -28,4 +30,3 @@ opens only the minimum relevant baseline documents:
 - `metrics` — SysEng's `GCP_ApplicationMetrics.html` metric-naming catalog,
   the metrics standard, and the Metrics NGP Starter how-to guides
 - `logs` — Sabre's logging standard (structure, PII/PCI, cost)
-- `verification` — SRE Advisor docs (used only by `/probe-verify`)

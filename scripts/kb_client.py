@@ -1,20 +1,4 @@
-"""kb_client.py: shared, universal known-fixes knowledge base for probe.
-
-Why a probe user's diagnosed fix should help every other probe user: errors
-like 'PromQL metric(s) are invalid' or a stale notificationChannels reference
-recur across many services/projects. Previously these lived in a hardcoded
-list in probe.py, so only the person who hit a given error first ever
-benefited from the fix. This module replaces that list with Cloud Datastore
-(Datastore mode) as the shared backing store:
-  - GCS would need hand-rolled read-modify-write locking for concurrent
-    contributors; a vector DB is overkill — GCP's error strings are fixed,
-    machine-generated text, not free-form prose, so plain string matching
-    (normalize + difflib fallback below) works fine.
-  - Datastore's REST API is talked to directly with the same OAuth bearer
-    token probe.py already gets from `gcloud auth print-access-token` — no
-    new SDK dependency, keeping probe.py's "stdlib + PyYAML only" design
-    intact.
-"""
+"""Cloud Datastore client for Probe's shared known-fixes knowledge base."""
 from __future__ import annotations
 
 import datetime
@@ -48,12 +32,7 @@ class KbError(Exception):
 
 
 def normalize_error(message: str) -> str:
-    """Collapse variable parts of a GCP error message (UUIDs, project IDs,
-    quoted resource names, numbers) into placeholders, so near-duplicate
-    errors from different resources/projects cluster onto the same
-    knowledge-base entity. Remaining differences (e.g. an un-quoted metric
-    name) are still caught by the difflib fuzzy-match fallback in
-    find_match()."""
+    """Replace variable error fields so equivalent failures cluster."""
     text = message.strip()
     for pattern, repl in _NORMALIZE_PATTERNS:
         text = pattern.sub(repl, text)
@@ -106,8 +85,7 @@ def _entity_to_dict(entity: dict) -> dict:
 
 
 def fetch_all(token: str) -> list[dict]:
-    """Fetch every KnownFix entity. The kind is expected to stay small
-    (hundreds, not millions), so a full scan per verify/submit run is cheap."""
+    """Fetch all known fixes."""
     url = f"{DATASTORE_BASE}:runQuery"
     body = {
         "partitionId": {"projectId": KB_PROJECT, "namespaceId": KB_NAMESPACE},
@@ -131,8 +109,7 @@ def fetch_all(token: str) -> list[dict]:
 
 
 def find_match(error_message: str, entities: list[dict]) -> dict | None:
-    """Find the best matching KnownFix entity for a raw error message: exact
-    normalized-signature match first, then a difflib fuzzy fallback."""
+    """Find an exact normalized match, then a fuzzy fallback."""
     normalized = normalize_error(error_message)
     for e in entities:
         if e.get("pattern_normalized") == normalized:
@@ -244,9 +221,6 @@ def submit(
     }
 
 
-# (example_message, fix, category) — representative real messages standing
-# in for today's hardcoded regex patterns, seeded once via `probe.py kb-seed`
-# so behavior doesn't regress before the shared KB has organic data.
 SEED_FIXES = [
     (
         "generic::invalid_argument: The following PromQL metric(s) are invalid: "
@@ -281,11 +255,10 @@ SEED_FIXES = [
 
 
 def seed_from_static(token: str, principal: str = "seed-migration") -> list[dict]:
-    """One-time migration helper: seed the shared KB with SEED_FIXES as
-    pre-confirmed entries (two synthetic 'yes' votes each). Idempotent —
-    re-running just adds two more 'yes' votes to the same entities."""
+    """Add two confirmation votes for each bundled fix."""
     results = []
     for message, fix, category in SEED_FIXES:
-        submit(token, message, fix, "yes", category=category, principal=principal)
-        results.append(submit(token, message, fix, "yes", category=category, principal=principal))
+        for _ in range(2):
+            result = submit(token, message, fix, "yes", category=category, principal=principal)
+        results.append(result)
     return results

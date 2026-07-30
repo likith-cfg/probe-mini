@@ -1,131 +1,77 @@
 # probe (probe-mini)
 
-A lightweight, standalone Copilot CLI plugin that generates and audits Sabre
-GCP observability config (alert policies, dashboards, and PodMonitoring) and
-verifies whether a real deployment succeeded — using Sabre's actual
-standards docs and the real **SRE Advisor** service, not guesswork.
+A lightweight Copilot CLI plugin for generating, auditing, and verifying Sabre
+GCP observability configuration. Runtime code uses Python's standard library
+plus PyYAML.
 
-This is a self-contained skills-first sibling of the larger
-[`probe`](https://github.com/sabre-internal/probe) Python package: no
-`uv`/pydantic/Jinja2 dependency, just stdlib Python + PyYAML, so it works
-anywhere Copilot CLI runs.
+## Commands
 
-## What it does
-
-- **`/probe`** — generate and audit alert policies, dashboards, and
-  PodMonitoring for a service, enforcing Sabre standards (required ServiceNow
-  doc fields, circuit-breaker naming, GMP vs MetricDescriptor rules,
-  cardinality-risk checks, and the "no CPU/GC-only alerts unless SLO-tied"
-  rule).
-- **`/probe-verify`** — check whether a change actually landed and worked:
-  layered checks from an instant GCP Monitoring API existence check, up
-  through Cloud Audit Logs root-cause analysis, up to a full LLM-generated
-  metric-correlation verdict from Sabre's SRE Advisor service.
-- **`/probe-help`** — quick command reference.
-
-Standards docs ship bundled in `docs/baseline/` (fetched from
-gitdocs.sabre.com) and self-refresh every 30 days — the `probe` skill
-checks `docs/.last_refresh.json` and re-fetches via the agent's own
-web-fetch tool when stale (gitdocs needs an authenticated session, so
-refreshing is agent-driven, not a bare script).
+- `/probe` generates and audits alert policies, dashboards, and PodMonitoring.
+- `/probe-verify` asks for a ServiceNow change number and returns GCP Advisor's
+  failure analysis. It can also run direct GCP resource and audit-log checks
+  when given a project and display-name filter.
+- `/probe-help` shows the command reference.
 
 ## Install
 
 ```bash
-copilot plugin marketplace add likith-cfg/probe-mini
+copilot plugin marketplace add sabre-internal/probe-mini
 copilot plugin install probe@probe-mini
+python3 -m pip install -r requirements.txt
 ```
-
-Or interactively inside Copilot CLI:
-
-```
-/plugin marketplace add likith-cfg/probe-mini
-/plugin install probe@probe-mini
-```
-
-Commands are then available as `/probe`, `/probe-verify`, `/probe-help`
-(or namespaced as `/probe-mini:probe` etc., depending on your Copilot CLI
-version).
 
 ## Use
 
-Start with the command reference:
-
-```text
-/probe-help
-```
-
-Generate and audit monitoring config:
-
 ```text
 /probe generate monitoring config for <service-name>
-```
-
-In a repository containing one service, Probe uses the current workspace as
-the service root. In a monorepo, Probe asks for the service's
-repository-relative path before inspecting any files and never searches
-sibling services.
-
-Probe asks for missing service, dependency, ServiceNow, and notification
-details. To identify the metrics pipeline efficiently, it checks a small set
-of known service configuration locations, suggests GMP or Stackdriver when
-the evidence is conclusive, and asks you to confirm the choice. Generated
-files stay in a staging directory until they pass audit and you approve
-copying them into the service repository.
-
-Probe also asks whether monitoring should be shared across environments or
-created for one environment. Environment choices come from the service's
-`BUILD` deployment metadata and `configuration/vars/app/env` directories and
-retain exact names such as `GCP-Dev`. Shared config is written once to the
-repository's common monitoring location; environment-specific config is
-written only under the selected environment.
-
-Audit existing monitoring config without generating anything:
-
-```text
 /probe audit monitoring config in <directory>
+/probe-verify
 ```
 
-Verify deployed resources and diagnose failures:
+`/probe-verify` asks for the exact change number, such as `CHG1234567`. GCP
+Advisor requires no browser session or gcloud token.
 
-```text
-/probe-verify <GCP project ID> <service name>
-```
+The `/probe` generation flow asks for the service root, monitoring scope,
+metric stack, dependencies, ServiceNow fields, and notification channel. It
+generates into a staging directory, audits the result, and asks before copying
+files into the service repository.
 
-## Requirements
+Bundled standards are selected through `docs/registry.yaml`. The agent opens
+only sources relevant to the request and refreshes stale snapshots from their
+documented URLs.
 
-- Python 3.9+ with `pyyaml` (`pip install pyyaml` if missing).
-- `gcloud` CLI, authenticated, for `/probe-verify`'s direct GCP API checks.
-- Network/SSO access to gitdocs.sabre.com and SRE Advisor for doc refresh
-  and Layer 4 verification (both are Sabre-internal).
-
-## Local script usage (no agent needed)
+## Local CLI
 
 ```bash
 python3 scripts/probe.py generate --app-name my-svc --project-name my-ns \
   --u-service "My Service" --u-assignment-group "CKI-OPS" \
-  --u-kb-article KB0000000 --metric-stack gmp --http --out /tmp/my-svc-monitoring
+  --u-kb-article KB0000000 --metric-stack gmp --http \
+  --out /tmp/my-svc-monitoring
 
 python3 scripts/probe.py audit /tmp/my-svc-monitoring
-
-python3 scripts/probe.py verify --project my-gcp-project --display-name-contains my-svc
+python3 scripts/probe.py advisor --chg CHG1234567
+python3 scripts/probe.py verify \
+  --project my-gcp-project --display-name-contains my-svc
 ```
 
-For `generate`, `--project-name` currently means the Kubernetes namespace,
-not the GCP project ID. The local script writes to `--out`; repository
-placement and monorepo service selection are handled by the `/probe` agent.
+The direct `verify` command requires an authenticated `gcloud` CLI. The
+`advisor` command does not.
+
+## Test
+
+```bash
+python3 -m unittest discover -s tests -p 'test_*.py'
+```
 
 ## Layout
 
-```
-.claude-plugin/       marketplace.json + plugin.json (Copilot CLI plugin manifest)
-plugin.yaml           provides_commands / provides_skills
-skills/probe/         guided generation + audit skill
-skills/probe-verify/  deployment verification skill
-skills/probe-help/    help skill
-commands/*.toml       slash-command wrappers
-scripts/probe.py      stdlib + pyyaml implementation (generate/audit/verify/refresh-state)
-docs/registry.yaml    request-time source routing index + refresh interval
-docs/.last_refresh.json  refresh timestamp state
-docs/baseline/*.md    bundled standards snapshots (offline bootstrap)
+```text
+.claude-plugin/       Copilot CLI plugin manifests
+commands/             slash-command wrappers
+docs/registry.yaml    standards source index and refresh interval
+scripts/probe.py      generate, audit, Advisor, and direct GCP checks
+scripts/kb_client.py  shared known-fixes client
+skills/               agent workflows
+tests/                unittest suite
+requirements.txt      runtime Python dependency
 ```

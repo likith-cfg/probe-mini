@@ -1,36 +1,25 @@
 # Probe installed
 
-Start with:
+Start with `/probe-help`.
 
-```
-/probe-help
+Install the Python dependency once:
+
+```bash
+python3 -m pip install -r requirements.txt
 ```
 
-Generate and audit monitoring config for a service:
+Generate or audit monitoring configuration:
 
-```
+```text
 /probe generate monitoring config for <service-name>
-```
-
-Describe what you need in plain language. Probe asks for any missing details,
-generates into a staging directory, audits the result, and shows you what it
-plans to copy before changing your service repository. In a single-service
-repository, Probe uses the current workspace directly. In a monorepo, it asks
-you for the service's repository-relative path before inspecting service files.
-Probe also asks whether monitoring is shared or environment-specific and keeps
-the repository's exact environment names, such as `GCP-Dev`.
-
-You can also audit existing monitoring config:
-
-```
 /probe audit monitoring config in <directory>
 ```
 
-Verify that deployed monitoring resources landed and work:
+Analyze a failed deployment:
 
-```
-/probe-verify <GCP project ID> <service name>
+```text
+/probe-verify
 ```
 
-Bundled Sabre standards refresh every 30 days. `/probe` reports whether they
-are current before using them.
+Probe asks for the exact ServiceNow change number and calls GCP Advisor
+directly. No browser setup is required.

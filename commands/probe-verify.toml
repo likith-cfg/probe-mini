@@ -1,2 +1,2 @@
 description = "Check whether a GCP monitoring change or deployment actually succeeded or failed."
-prompt = "Use the probe-verify skill to check whether the deployment/change described in $ARGUMENTS succeeded. Run the layered checks (GCP API existence, Cloud Audit Logs root-cause, SRE Advisor if a CHG number is available) and report findings plainly. If a real error is found, propose a fix."
+prompt = "Use the probe-verify skill to analyze the monitoring deployment/change described in $ARGUMENTS. Ask the user for the exact ServiceNow change number (CHG) when it is missing, then run `python3 scripts/probe.py advisor --chg <CHG>`. Report GCP Advisor's evidence plainly. Do not attempt deployment discovery."

@@ -1,27 +1,5 @@
 #!/usr/bin/env python3
-"""probe-mini: generate/audit GCP monitoring config, and verify a deployment.
-
-Stdlib + PyYAML only (no Jinja2/pydantic) so this runs standalone on any
-machine with Python 3.9+ and `pip install pyyaml` if not already present.
-Subcommands:
-
-  probe.py generate --app-name X --project-name X --u-service X \\
-      --u-assignment-group X [--u-kb-article X] [--notification-channel X] \\
-      [--metric-stack gmp|stackdriver] [--http] [--out DIR]
-
-  probe.py audit DIR
-
-  probe.py verify --project PROJECT [--display-name-contains NAME]
-      [--chg CHG1234567]
-
-  probe.py kb-submit --error-message TEXT --fix TEXT --outcome yes|no|not_sure
-      [--category X]
-
-  probe.py kb-seed
-
-  probe.py check-refresh [--registry docs/registry.yaml]
-      [--state docs/.last_refresh.json]
-"""
+"""Generate, audit, and verify Sabre GCP monitoring configuration."""
 from __future__ import annotations
 
 import argparse
@@ -33,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 try:
@@ -43,7 +22,6 @@ except ImportError:
 
 import kb_client
 
-CB_TYPES = {"http", "grpc", "pubsub", "mom", "redis", "datastore", "gcs"}
 REQUIRED_ALERT_DOC_FIELDS = {"severity", "u_service", "u_assignment_group", "u_kb_article"}
 CARDINALITY_RISK_WORDS = {"user_id", "userid", "account_number", "uuid", "unique_id", "session_id"}
 
@@ -80,12 +58,7 @@ spec:
         evaluationInterval: 60s
         disableMetricValidation: true
 """
-# disableMetricValidation is set by default: GCP's alert-policy create-time
-# validator can't statically verify _count/_sum series derived from a
-# Prometheus histogram (e.g. http_server_requests_count off
-# http_server_requests/histogram) and rejects with INVALID_ARGUMENT even
-# though the query is valid and works at evaluation time. This is the
-# officially sanctioned GCP bypass for exactly that false positive.
+# Required for synthetic _count/_sum series derived from Prometheus histograms.
 
 DASHBOARD_TEMPLATE = """apiVersion: monitoring.cnrm.cloud.google.com/v1beta1
 kind: MonitoringDashboard
@@ -200,7 +173,8 @@ def cmd_audit(args: argparse.Namespace) -> None:
                 continue
             path = os.path.join(root, fname)
             files_scanned += 1
-            raw = open(path).read()
+            with open(path) as f:
+                raw = f.read()
             try:
                 docs = list(yaml.safe_load_all(_strip_jinja(raw)))
             except yaml.YAMLError as e:
@@ -273,10 +247,7 @@ def cmd_audit(args: argparse.Namespace) -> None:
 
 
 class EnvironmentIssue(Exception):
-    """Raised when verify can't even run its checks — missing/misconfigured
-    gcloud, expired credentials, or an IAM permission gap. This is NEVER a
-    verdict on the user's deployment; it must be reported as a distinct,
-    clearly-flagged category so it isn't mistaken for '0 resources found'."""
+    """Raised when environment or authentication prevents verification."""
 
     def __init__(self, message: str, remediation: str):
         super().__init__(message)
@@ -285,15 +256,14 @@ class EnvironmentIssue(Exception):
 
 
 class ApiUsageIssue(Exception):
-    """Raised for non-auth API errors (e.g. bad/nonexistent --project, malformed
-    request) — not an auth/env gap, but still not a deployment verdict, so it
-    must not be silently reported as '0 matching'."""
+    """Raised for non-auth API errors or malformed arguments."""
+
+
+GCP_ADVISOR_BASE_URL = "https://dev-platform-advisor-ngp-mon-ci.apps.dev-03.us-central2.dev.sabre-gcp.com"
 
 
 def _preflight_gcloud_auth() -> tuple[str, str]:
-    """Check gcloud is installed and authenticated, and return (bearer_token,
-    active_account_email). Raises EnvironmentIssue with a specific, actionable
-    remediation instead of a bare traceback or a misleading '0 matching' result."""
+    """Return the active gcloud bearer token and account."""
     if shutil.which("gcloud") is None:
         raise EnvironmentIssue(
             "gcloud CLI is not installed / not on PATH.",
@@ -375,14 +345,56 @@ def _classify_http_error(e: "urllib.error.HTTPError", url: str) -> Exception:
     return ApiUsageIssue(f"HTTP {e.code} calling {url}: {body[:300]}")
 
 
+def _get_advisor_json(chg: str) -> dict:
+    chg_q = urllib.parse.quote(chg, safe="")
+    url = f"{GCP_ADVISOR_BASE_URL}/advisor/{chg_q}"
+    req = urllib.request.Request(url, headers={"Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            body = resp.read()
+    except urllib.error.HTTPError as e:
+        payload = e.read().decode(errors="replace") if e.fp else ""
+        if e.code == 404:
+            raise ApiUsageIssue(
+                f"GCP Advisor found no analysis for {chg} (HTTP 404). "
+                "Double-check the change number."
+            ) from e
+        raise ApiUsageIssue(f"GCP Advisor returned HTTP {e.code} for {chg}: {payload[:300]}") from e
+    except urllib.error.URLError as e:
+        raise EnvironmentIssue(
+            f"Network error calling GCP Advisor for {chg}: {e.reason}",
+            "Check network/VPN connectivity to *.sabre-gcp.com from this shell.",
+        ) from e
+    try:
+        return json.loads(body)
+    except json.JSONDecodeError as error:
+        raise ApiUsageIssue(f"GCP Advisor returned invalid JSON for {chg}") from error
+
+
+def cmd_advisor(args: argparse.Namespace) -> None:
+    try:
+        payload = _get_advisor_json(args.chg)
+    except EnvironmentIssue as e:
+        _print_environment_issue(e)
+        sys.exit(2)
+    except ApiUsageIssue as e:
+        _print_api_usage_issue(e)
+        sys.exit(3)
+
+    print(f"=== GCP Advisor failure analysis for {payload.get('change', args.chg)} ===")
+    print(f"Error:  {payload.get('error') or '(none reported)'}")
+    print(f"Advice: {payload.get('advice') or '(none reported)'}")
+    details = payload.get("details")
+    if details:
+        print(f"Details: {details}")
+    events = payload.get("events") or []
+    print(f"Events: {len(events) if isinstance(events, list) else 'n/a'}")
+    for event in events if isinstance(events, list) else []:
+        print(f" - {event}")
+
+
 def _diagnose_audit_log_failures(project: str, name_filter: str, token: str) -> list[dict]:
-    """Query Cloud Audit Logs for failed Create* calls whose request payload
-    mentions name_filter, and match each error message against the shared,
-    universal known-fixes knowledge base (kb_client.py, backed by Cloud
-    Datastore). This is what lets the agent 'get this data and fix the issue'
-    without the user needing to paste the Armada error message by hand, and
-    lets a fix diagnosed by one user help everyone else who hits the same
-    error."""
+    """Find failed Monitoring creates and match them to known fixes."""
     filter_str = (
         '(protoPayload.methodName="google.monitoring.v3.AlertPolicyService.CreateAlertPolicy" '
         'OR protoPayload.methodName="google.monitoring.v3.DashboardsService.CreateDashboard") '
@@ -401,8 +413,7 @@ def _diagnose_audit_log_failures(project: str, name_filter: str, token: str) -> 
     try:
         kb_entities = kb_client.fetch_all(token)
     except kb_client.KbError as e:
-        # The shared KB is an enhancement, not core to verify — don't let an
-        # unreachable/inaccessible KB break audit-log diagnosis entirely.
+        # KB enrichment is optional; raw audit evidence remains useful.
         kb_warning = str(e)
 
     grouped: dict[tuple[str, str], dict] = {}
@@ -472,18 +483,19 @@ def _print_api_usage_issue(e: ApiUsageIssue) -> None:
 
 
 def cmd_verify(args: argparse.Namespace) -> None:
+    project = args.project
+    name_filter = args.display_name_contains
+
     try:
         token, _account = _preflight_gcloud_auth()
     except EnvironmentIssue as e:
         _print_environment_issue(e)
         sys.exit(2)  # inconclusive, not pass/fail
 
-    name_filter = args.display_name_contains
-
     try:
-        print(f"=== Alert policies matching {name_filter!r} in {args.project} ===")
+        print(f"=== Alert policies matching {name_filter!r} in {project} ===")
         url = (
-            f"https://monitoring.googleapis.com/v3/projects/{args.project}/alertPolicies"
+            f"https://monitoring.googleapis.com/v3/projects/{project}/alertPolicies"
             f"?filter=displayName:%22{name_filter}%22"
         )
         data = _get_json(url, token)
@@ -492,16 +504,16 @@ def cmd_verify(args: argparse.Namespace) -> None:
         for p in policies:
             print(" -", p.get("displayName"), "| mutatedBy:", p.get("mutatedBy"))
 
-        print(f"\n=== Dashboards matching {name_filter!r} in {args.project} ===")
-        url = f"https://monitoring.googleapis.com/v1/projects/{args.project}/dashboards"
+        print(f"\n=== Dashboards matching {name_filter!r} in {project} ===")
+        url = f"https://monitoring.googleapis.com/v1/projects/{project}/dashboards"
         data = _get_json(url, token)
         dashes = [d for d in data.get("dashboards", []) if name_filter.lower() in (d.get("displayName") or "").lower()]
         print(f"{len(dashes)} matching")
         for d in dashes:
             print(" -", d.get("displayName"))
 
-        print(f"\n=== Recent failed Create* attempts in Cloud Audit Logs (last 2 days) ===")
-        findings = _diagnose_audit_log_failures(args.project, name_filter, token)
+        print("\n=== Recent failed Create* attempts in Cloud Audit Logs (last 2 days) ===")
+        findings = _diagnose_audit_log_failures(project, name_filter, token)
         if not findings:
             if not policies and not dashes:
                 print(
@@ -521,38 +533,8 @@ def cmd_verify(args: argparse.Namespace) -> None:
         _print_api_usage_issue(e)
         sys.exit(3)  # distinct exit code: bad usage, not pass/fail
 
-    if args.chg:
-        print(f"\n=== SRE Advisor analysis for {args.chg} ===")
-        sre_url = f"https://sre-advisor-core-sre-advisor.apps.dev-01.us-central1.dev.sabre-gcp.com/advice/change/{args.chg}"
-        print(f"GET {sre_url}")
-        try:
-            req = urllib.request.Request(sre_url)
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                print(resp.read().decode())
-        except urllib.error.HTTPError as e:
-            body = e.read().decode(errors="replace") if e.fp else ""
-            if e.code in (401, 403):
-                _print_environment_issue(EnvironmentIssue(
-                    f"SRE Advisor returned {e.code}: {body[:300]}",
-                    "SRE Advisor needs Sabre SSO/VPN access from this shell — this is an "
-                    "environment/auth gap, not a verdict on the change. Try the UI instead: "
-                    "https://sre-advisor-ui-sre-advisor.apps.dev-01.us-central1.dev.sabre-gcp.com/",
-                ))
-            else:
-                print(f"SRE Advisor request failed: HTTP {e.code}: {body[:300]}")
-        except urllib.error.URLError as e:
-            _print_environment_issue(EnvironmentIssue(
-                f"Network error calling SRE Advisor: {e.reason}",
-                "SRE Advisor is only reachable from Sabre's internal network/VPN — this is an "
-                "environment gap, not a verdict on the change. Try the UI instead: "
-                "https://sre-advisor-ui-sre-advisor.apps.dev-01.us-central1.dev.sabre-gcp.com/",
-            ))
-
 
 def cmd_kb_submit(args: argparse.Namespace) -> None:
-    """Contribute a fix (or another vote on an existing one) to the shared,
-    universal known-fixes knowledge base so other probe users/agents hitting
-    the same GCP error benefit from it too."""
     try:
         token, account = _preflight_gcloud_auth()
     except EnvironmentIssue as e:
@@ -578,9 +560,6 @@ def cmd_kb_submit(args: argparse.Namespace) -> None:
 
 
 def cmd_kb_seed(args: argparse.Namespace) -> None:
-    """One-time (idempotent) migration: seed the shared KB with today's
-    previously-hardcoded fixes so behavior doesn't regress before the KB has
-    organic contributions. See kb_client.SEED_FIXES."""
     try:
         token, account = _preflight_gcloud_auth()
     except EnvironmentIssue as e:
@@ -598,10 +577,13 @@ def cmd_kb_seed(args: argparse.Namespace) -> None:
 
 
 def cmd_check_refresh(args: argparse.Namespace) -> None:
-    with open(args.state) as f:
-        state = json.load(f)
+    state = {}
+    if os.path.exists(args.state):
+        with open(args.state) as f:
+            state = json.load(f)
     last = state.get("last_refresh")
-    interval_days = yaml.safe_load(open(args.registry)).get("refresh_interval_days", 30)
+    with open(args.registry) as f:
+        interval_days = yaml.safe_load(f).get("refresh_interval_days", 30)
     stale = True
     if last:
         last_dt = datetime.datetime.fromisoformat(last.replace("Z", "+00:00"))
@@ -611,7 +593,7 @@ def cmd_check_refresh(args: argparse.Namespace) -> None:
     else:
         print("last_refresh=null (never refreshed)")
     print("STALE" if stale else "FRESH")
-    sys.exit(0 if stale else 1)  
+    sys.exit(0 if stale else 1)
 
 
 def cmd_mark_refreshed(args: argparse.Namespace) -> None:
@@ -645,8 +627,14 @@ def main() -> None:
     v = sub.add_parser("verify")
     v.add_argument("--project", required=True)
     v.add_argument("--display-name-contains", required=True)
-    v.add_argument("--chg", default=None, help="SNOW Change ID for SRE Advisor analysis, e.g. CHG1234567")
     v.set_defaults(func=cmd_verify)
+
+    adv = sub.add_parser(
+        "advisor",
+        help="Get GCP Advisor's failure analysis for a ServiceNow change number (CHG)",
+    )
+    adv.add_argument("--chg", required=True, help="ServiceNow change number, e.g. CHG1234567")
+    adv.set_defaults(func=cmd_advisor)
 
     ks = sub.add_parser("kb-submit", help="Contribute a fix to the shared known-fixes knowledge base")
     ks.add_argument("--error-message", required=True, help="The raw GCP error message you diagnosed")

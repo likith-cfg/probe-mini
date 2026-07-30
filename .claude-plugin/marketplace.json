@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "probe",
-      "description": "Generate/audit GCP alert policies, dashboards, service monitors, and verify a deployment's success via GCP Monitoring + SRE Advisor.",
+      "description": "Generate/audit GCP monitoring config and diagnose deployments through GCP Advisor, GCP Monitoring, and Cloud Audit Logs.",
       "source": "./",
       "category": "productivity"
     }

@@ -49,8 +49,8 @@ smallest sufficient set of sources. Open only the selected
 - When a request spans distinct concerns (for example metric selection,
   exporter/query behavior, and deployment format), select one source for each
   concern whose description explicitly matches.
-- Deployment verification belongs to `/probe-verify`, whose fixed workflow
-  names its required verification docs directly and does not need this index.
+- Deployment verification belongs to `/probe-verify` and does not use this
+  documentation index.
 
 If the user asks only a documentation question, answer from the selected
 docs and stop.
