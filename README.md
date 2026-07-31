@@ -40,28 +40,6 @@ Bundled standards are selected through `docs/registry.yaml`. The agent opens
 only sources relevant to the request and refreshes stale snapshots from their
 documented URLs.
 
-## Local CLI
-
-```bash
-python3 scripts/probe.py generate --app-name my-svc --project-name my-ns \
-  --u-service "My Service" --u-assignment-group "CKI-OPS" \
-  --u-kb-article KB0000000 --metric-stack gmp --http \
-  --out /tmp/my-svc-monitoring
-
-python3 scripts/probe.py audit /tmp/my-svc-monitoring
-python3 scripts/probe.py advisor --chg CHG1234567
-python3 scripts/probe.py verify \
-  --project my-gcp-project --display-name-contains my-svc
-```
-
-The direct `verify` command requires an authenticated `gcloud` CLI. The
-`advisor` command does not.
-
-## Test
-
-```bash
-python3 -m unittest discover -s tests -p 'test_*.py'
-```
 
 ## Layout
 
