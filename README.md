@@ -15,7 +15,7 @@ plus PyYAML.
 ## Install
 
 ```bash
-copilot plugin marketplace add sabre-internal/probe-mini
+copilot plugin marketplace add likith-cfg/probe-mini
 copilot plugin install probe@probe-mini
 python3 -m pip install -r requirements.txt
 ```

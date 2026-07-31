@@ -9,6 +9,14 @@ disable-model-invocation: true
 
 # probe-verify
 
+**Resolve every relative path below (`scripts/probe.py`) against this
+plugin's own installed root, not the open workspace.** This file's own
+absolute path always ends in `skills/probe-verify/SKILL.md`; strip that
+suffix to get the root, then invoke the script using the resulting absolute
+path (for example `python3 <root>/scripts/probe.py advisor --chg <CHG>`).
+Never `file_search`/`grep_search` the workspace for `probe.py` — it belongs
+to the plugin installation and will not be found there.
+
 ## GCP Advisor
 
 Ask the user for the exact ServiceNow change number, such as `CHG1234567`, if

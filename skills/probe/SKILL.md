@@ -15,6 +15,15 @@ disable-model-invocation: true
 You generate and audit Sabre GCP monitoring config. Standards live in
 `docs/baseline/*.md`.
 
+**Resolve every relative path below (`scripts/`, `docs/`) against this
+plugin's own installed root, not the open workspace.** This file's own
+absolute path always ends in `skills/probe/SKILL.md`; strip that suffix to
+get the root, then invoke scripts and read docs using the resulting absolute
+path (for example `python3 <root>/scripts/probe.py check-refresh`). Never
+`file_search`/`grep_search` the workspace for `probe.py` or `registry.yaml` —
+they belong to the plugin installation and will not be found there, and the
+shell's current directory has no fixed relationship to this root.
+
 Optimize context use: `docs/registry.yaml` is the small routing index;
 `docs/baseline/*.md` contains the large source documents. Never scan or load
 all baseline files.
