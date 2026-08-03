@@ -1,2 +1,2 @@
 description = "Show what the probe plugin can do."
-prompt = "Use the probe-help skill to show the available probe commands and what they do."
+prompt = "Use the probe-help skill."

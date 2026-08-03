@@ -328,6 +328,38 @@ def _post_json(url: str, token: str, body: dict) -> dict:
         ) from e
 
 
+def _list_notification_channels(project: str, token: str) -> list[dict]:
+    url = f"https://monitoring.googleapis.com/v3/projects/{project}/notificationChannels?pageSize=100"
+    channels: list[dict] = []
+    while url:
+        data = _get_json(url, token)
+        channels.extend(data.get("notificationChannels", []))
+        page_token = data.get("nextPageToken")
+        url = f"{url.split('&pageToken=', 1)[0]}&{urllib.parse.urlencode({'pageToken': page_token})}" if page_token else ""
+    return channels
+
+
+def cmd_notification_channels(args: argparse.Namespace) -> None:
+    try:
+        token, _account = _preflight_gcloud_auth()
+        channels = _list_notification_channels(args.project, token)
+    except EnvironmentIssue as e:
+        _print_environment_issue(e)
+        sys.exit(2)
+    except ApiUsageIssue as e:
+        _print_api_usage_issue(e)
+        sys.exit(3)
+
+    print(f"{len(channels)} notification channel(s) in {args.project}")
+    for channel in channels:
+        print(
+            f"{channel.get('name', '')}\t"
+            f"type={channel.get('type', '')}\t"
+            f"enabled={channel.get('enabled', False)}\t"
+            f"displayName={channel.get('displayName', '')}"
+        )
+
+
 def _classify_http_error(e: "urllib.error.HTTPError", url: str) -> Exception:
     body = e.read().decode(errors="replace") if e.fp else ""
     if e.code == 401:
@@ -628,6 +660,10 @@ def main() -> None:
     v.add_argument("--project", required=True)
     v.add_argument("--display-name-contains", required=True)
     v.set_defaults(func=cmd_verify)
+
+    nc = sub.add_parser("notification-channels", help="List notification channels in a GCP project")
+    nc.add_argument("--project", required=True)
+    nc.set_defaults(func=cmd_notification_channels)
 
     adv = sub.add_parser(
         "advisor",

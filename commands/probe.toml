@@ -1,2 +1,2 @@
-description = "Generate and audit GCP monitoring config (alert policies, dashboards, service monitors) for a Sabre GKE service."
-prompt = "Use the probe skill to generate and audit GCP monitoring config for the service described in $ARGUMENTS. Use the workspace root for a clear single-service repository; in a monorepo, ask for the service_root before inspecting service files. Ask whether monitoring is shared or environment-specific; offer only exact environment names found in BUILD or configuration/vars/app/env. Ask for any other missing required fields (app_name, project_name, u_service, u_assignment_group, u_kb_article, notification_channel) before generating."
+description = "Generate or audit Sabre GCP observability configuration."
+prompt = "Use the probe skill for this request: $ARGUMENTS"
