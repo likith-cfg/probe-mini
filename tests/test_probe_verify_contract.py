@@ -17,6 +17,13 @@ SPEC.loader.exec_module(probe)
 
 
 class ProbeVerifyContractTests(unittest.TestCase):
+    def test_probe_refresh_runs_only_on_first_conversation_turn(self):
+        skill = (ROOT / "skills/probe/SKILL.md").read_text()
+        normalized_skill = " ".join(skill.split())
+
+        self.assertIn("Run only on the first turn of this `/probe` conversation", normalized_skill)
+        self.assertIn("skip this section on later messages", normalized_skill)
+
     def test_prompt_requires_change_number(self):
         skill = (ROOT / "skills/probe-verify/SKILL.md").read_text()
         command = (ROOT / "commands/probe-verify.toml").read_text()

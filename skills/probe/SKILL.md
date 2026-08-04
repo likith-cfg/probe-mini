@@ -27,7 +27,8 @@ below apply only to the confirmed service root.
 
 ## 1. Refresh standards
 
-Run once per session:
+Run only on the first turn of this `/probe` conversation. Once run, skip this
+section on later messages, even if the skill is loaded again:
 
 ```bash
 python3 <root>/scripts/probe.py check-refresh
@@ -49,6 +50,9 @@ Assume the user is a developer who knows standard observability concepts but is
 new to Sabre's tooling and conventions. Explain Sabre-specific acronyms,
 ownership, repository paths, and required configuration when first relevant.
 Do not show internal workflow names such as `service_root` unless useful.
+
+Use `vscode_askQuestions` for every question when available. Do not ask in plain
+chat when this tool is available; otherwise fall back to one concise chat question.
 
 Before asking anything else or inspecting repository files, ask:
 
