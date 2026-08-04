@@ -22,6 +22,12 @@ python3 -m pip install -r requirements.txt
 Python 3 and PyYAML are required. Live GCP checks use the active `gcloud`
 account; GCP Advisor does not require `gcloud` authentication.
 
+## Update
+
+```bash
+copilot plugin update probe@probe-mini
+```
+
 ### IntelliJ
 
 Copy `.github/prompts/probe.prompt.md` into the service repository and ensure
