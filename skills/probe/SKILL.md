@@ -9,8 +9,8 @@ disable-model-invocation: true
 
 # probe
 
-Generate and audit Sabre GCP alert policies, dashboards, and service monitors
-against the standards indexed by `docs/registry.yaml`.
+Configure or audit observability for a Sabre GKE service using the current
+standards indexed by `docs/registry.yaml`.
 
 ## Plugin paths
 
@@ -25,7 +25,7 @@ python3 <root>/scripts/probe.py check-refresh
 Do not search the workspace for plugin files. Repository searches described
 below apply only to the confirmed service root.
 
-## 1. Refresh and select standards
+## 1. Refresh standards
 
 Run once per session:
 
@@ -41,160 +41,109 @@ python3 <root>/scripts/probe.py check-refresh
 - Exit `1`: docs are fresh. Tell the user their age in days. Do not run
   `mark-refreshed`.
 
-Read `docs/registry.yaml` and choose the smallest sufficient source set. Start
-with one source and add another only for a distinct concern not covered by the
-first. Never load or scan every baseline document.
+Do not select documents yet. First identify the service and its current setup.
 
-- Documentation-only request: answer from the selected source and stop.
-- Audit-only request: continue at section 5; select more docs only if findings
-  require them.
-- Generation request: select only the sources needed for alerts, the dashboard,
-  and PodMonitoring when using GMP, then continue.
-- Deployment verification belongs to `/probe-verify`.
+## 2. Identify the service
 
-## 2. Confirm generation inputs
+Assume the user is a developer who knows standard observability concepts but is
+new to Sabre's tooling and conventions. Explain Sabre-specific acronyms,
+ownership, repository paths, and required configuration when first relevant.
+Do not show internal workflow names such as `service_root` unless useful.
 
-Repository evidence supports a suggestion but never replaces user
-confirmation. Scope every lookup to `service_root`; never inspect sibling
-services.
+Before asking anything else or inspecting repository files, ask:
 
-Collect and confirm:
+> Which folder contains the service? Use directly `.` if this workspace contains one
+> service. If it contains several services, give me the path to this service.
 
-- `service_root`: use `.` only when the workspace clearly contains one service.
-  In a monorepo or ambiguous workspace, ask for the service-relative path before
-  inspecting files.
-- `app_name` and `project_name` (the deployment namespace).
-- `monitoring_scope`: shared or one environment. Offer only exact environment
-  names found in the service root's `BUILD` metadata and
-  `configuration/vars/app/env/<environment>` directories. Preserve case and
-  punctuation. If the sources disagree, show both sets and ask which existing
-  directory convention to follow.
-- HTTP server presence and downstream HTTP/gRPC/PubSub/MOM/Redis dependencies.
-  Discover these as described in **Service signals** below, then confirm them.
-- `metric_stack`: `gmp` or `stackdriver`. Discover it as described in
-  **Metric stack** below, then confirm it.
-- ServiceNow values: `u_service`, `u_assignment_group`, and a real
-  `u_kb_article` (`KB########`). These are values from the service's existing
-  ServiceNow records, not resources to create in the repository. Never invent a
-  real-looking KB number. If no runbook exists, use `KB0000000`, clearly state
-  that it must be replaced before production, and direct the user to create a
-  runbook in ServiceNow Knowledge Base.
-- `notification_channel`: resolve it as described in **Notification channel**
-  below, then confirm it with the user.
+Read that service's `BUILD` file first if it exists and use its exact deployed
+environment names. If no `BUILD` file exists, derive them from
+`configuration/`. Preserve exact spelling, case, and punctuation such as
+`GCP-Dev`.
 
-### Notification channel
+## 3. Resolve ambiguity
 
-Channels are project-level, not service-specific. For the confirmed environment:
+Inspect repository evidence before asking questions. Read, in order:
 
-1. Read only `configuration/vars/app/env/<environment>/application*.{yaml,yml}`.
-   If `snow_notification_channel` contains
-   `projects/<project>/notificationChannels/<id>`, offer it first.
-2. Otherwise read only the matching
-   `configuration/files/helm/env/<environment>/` application config. Use a
-  monitoring exporter `project-id`, or `spring.cloud.gcp.project-id` as a
-  candidate. For the confirmed target project, run:
+1. `BUILD`, `pom.xml`, `build.gradle`, or `build.gradle.kts`.
+2. `src/main/resources/application*.properties`, `application*.yml`,
+   `application*.yaml`, and logging configuration.
+3. Matching files under `configuration/vars/app` and
+   `configuration/files/helm` for the selected environment.
+4. Source inside `service_root` only for a specific unresolved signal.
 
-```bash
-python3 <root>/scripts/probe.py notification-channels --project <project>
-```
+Determine whether the request is for:
 
-   The script obtains the active access token from `gcloud`; do not build a
-   `curl` command. Offer only returned channels and let the user choose.
-3. If no candidate or usable channel exists, ask for one. On auth or permission
-   errors, ask the user to authenticate or obtain Monitoring access. Do not use
-   `BUILD` workload project IDs unless monitoring config confirms them; workload
-   and GKE Ops projects may differ. Never guess. Mark a borrowed channel as
-   temporary because alerts route there until replaced.
+- a new service: configure logs, metrics, and tracing
+- existing alerts or dashboards: audit or update them only when explicitly
+  requested.
 
-### Service signals
+For a new service, tell the user that SRE creates and standardizes alerts and
+dashboards. Do not ask for ServiceNow or notification-channel values. Never
+remove existing monitoring objects merely because SRE owns new-service setup.
 
-Inspect service signals in this order and stop when evidence is conclusive:
+Ask a question only when the answer changes the files or standards used and
+cannot be established safely from the repository. Typical ambiguities are:
 
-1. `configuration/vars/app/service-specific.yaml` and existing monitoring or
-   deployment manifests. Named ports/routes reveal HTTP or gRPC servers;
-   monitor resources and environment references may reveal integrations.
-2. `src/main/resources/application*.yml`, `application*.yaml`,
-   `application*.properties`, and deployed app-config equivalents. Read only
-   matching snippets for HTTP client URLs, gRPC, PubSub, MOM/JMS, or Redis.
-3. The service/module `pom.xml`, `build.gradle`, or `build.gradle.kts`. Read only
-   matching dependency lines for web servers/clients and the named integration
-   technologies.
+- more than one service path or environment;
+- conflicting build and deployment configuration;
+- unclear new-service versus existing-monitoring scope;
+- a dependency present without evidence that the service uses it; or
+- a custom metric or trace whose intended business event is unknown.
 
-Treat an explicit server port/route as server evidence and an outbound endpoint
-or client usage as downstream evidence. Generic libraries alone are not
-conclusive because they may be transitive or used in the opposite direction.
+Ask one concise question at a time. Include the evidence found and offer only
+repository-backed choices. Do not ask the user to confirm facts already proved
+by consistent configuration. Never guess when evidence conflicts.
 
-If those files are inconclusive, search source files within `service_root` for
-framework annotations and client construction/usages associated with the
-unresolved technology. Do not read unrelated source files or expand into sibling
-services. Report uncertainty when evidence is ambiguous; do not guess.
+## 4. Read the selected documents
 
-Show the evidence and ask the user to confirm the detected HTTP server and
-dependency list.
+Use `docs/registry.yaml` only as a routing index. Its descriptions are not
+source material. Select the smallest sufficient source set, then open and read
+`<root>/docs/baseline/<slug>.md` for every selected entry before making
+source-dependent claims or edits. Never load every baseline document.
 
-### Metric stack
+- Metrics: select the standard and only the starter guides needed for the
+  detected technology and task.
+- Logs: select the standard and only the installation or customization guides
+  needed for the detected setup.
+- Tracing: select the ADR, standard, and only the starter guides needed for the
+  detected setup.
+- Existing alerts or dashboards: select their matching standards.
+- Documentation-only request: answer from the selected document and stop.
 
-Inspect these locations in order and stop at the first conclusive signal:
+Use exact properties, versions, and requirements from the baselines, not from
+memory. If a required baseline is missing or failed to refresh, stop and report
+that gap instead of inventing guidance. Deployment verification belongs to
+`/probe-verify`.
 
-1. Existing monitoring manifests: `PodMonitoring` or `ServiceMonitor` suggests
-   `gmp`.
-2. Application config and `service-specific.yaml`: `/actuator/prometheus` or
-   Prometheus export suggests `gmp`; `management.stackdriver.metrics.export.*`
-   suggests `stackdriver`.
-3. The service/module `pom.xml`, `build.gradle`, or `build.gradle.kts`:
-   `micrometer-registry-prometheus` suggests `gmp` and
-   `micrometer-registry-stackdriver` suggests `stackdriver`.
+## 5. Compare and change
 
-Show the evidence and ask the user to confirm. Present conflicting signals
-without recommending either stack. If no signal exists, ask the user to choose
-without suggesting a default.
+Compare the service with the selected documents:
 
-## 3. Generate in staging
+- Metrics: build dependencies, application and deployment properties, exported
+  endpoints, instrumentation, labels, and only the detected service paths.
+- Logs: dependencies, configuration, profiles, output, fields, security
+  controls, and relevant usage.
+- Tracing: dependencies, properties, automatic instrumentation, context
+  propagation, sampling, and confirmed service paths.
 
-Prefer customer-impact alerts such as workload failures
-(`completion_code_category != "SUCCESS"`) and open dependency circuit breakers.
-Do not add CPU or GC alerts unless the user ties them to an SLO.
+Report each gap with the baseline slug that establishes it. Use the repository's
+existing versions and style unless a selected baseline requires a change. Make
+the smallest complete change and run the narrowest relevant checks.
+
+For an explicit audit of existing alerts or dashboards, run:
 
 ```bash
-python3 <root>/scripts/probe.py generate \
-  --app-name <app> --project-name <namespace> \
-  --u-service "<u_service>" --u-assignment-group "<group>" \
-  --u-kb-article <KB or KB0000000> \
-  --notification-channel "<channel resource name or empty>" \
-  --metric-stack <gmp|stackdriver> \
-  [--http] [--downstream-http <name1> <name2>] \
-  --out <staging-dir>
+python3 <root>/scripts/probe.py audit <existing-monitoring-directory>
 ```
 
-Use only confirmed values. Pass `--http` only for a confirmed HTTP server and
-omit `--downstream-http` when no downstream HTTP services were found.
+Fix every `[ERROR]`. Explain each `[WARN]` with its practical impact and source
+slug. Preserve the existing common or environment-specific layout. Ask for
+ServiceNow or notification-channel values only when an existing alert change
+requires them and repository evidence cannot supply them.
 
-## 4. Complete the dashboard
+## 6. Report
 
-Generation leaves an empty `widgets` array. Use the selected dashboard standard
-to add widgets for metrics the service actually emits, such as HTTP/gRPC
-throughput and latency, workload failures, open circuit breakers, or JVM/GC.
-Never deliver an empty dashboard skeleton.
-
-## 5. Audit
-
-```bash
-python3 <root>/scripts/probe.py audit <staging-or-existing-directory>
-```
-
-Fix every `[ERROR]`. Explain every `[WARN]` to the user, including placeholders
-and standards exceptions; do not treat warnings as lint noise.
-
-## 6. Install after PASS
-
-Copy generated files only after the audit passes. Follow the confirmed service's
-existing monitoring layout and artifact directories such as `alertpolicies`,
-`dashboards`, and `servicemonitors`.
-
-- Shared scope: use the existing common monitoring location.
-- Environment scope: use only the exact confirmed environment directory.
-- Never duplicate shared config into every environment.
-- Never `git`/`s2` commit or push without explicit user approval.
-
-This skill does not generate logging config. Answer logging questions from the
-selected standards source.
+Summarize what was already present, what changed, and what remains for the user
+or SRE team. Use the words logs, metrics, traces, alerts, and dashboards rather
+than unexplained product abbreviations. Mention file paths as evidence, but do
+not overwhelm the user with every file inspected.

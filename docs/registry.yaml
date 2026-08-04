@@ -40,6 +40,36 @@ sources:
       logging, PCI/PII masking or access control, Cloud Logging ingestion
       cost, GKE log optimization, log sinks, or logs versus log-based metrics.
 
+  - category: logs
+    slug: logging-starter-installation
+    url: "https://gitdocs.sabre.com/gitdocs/ngp-starters/how-to-guides/logging-starter-installation.html?format=markdown"
+    description: >
+      Use when first adding the Logging NGP Starter dependency and
+      logback-spring.xml base configuration to a Java service.
+
+  # ── TRACING ────────────────────────────────────────────────────────────
+  - category: tracing
+    slug: standards-tracing
+    url: "https://gitdocs.sabre.com/gitdocs/observability-docs/observability-standards/tracing.html?format=markdown"
+    description: >
+      Use for Sabre tracing purpose, Cloud Trace and OpenTelemetry direction,
+      cross-service trace limitations, or recommended tracing tools.
+
+  - category: tracing
+    slug: adr-0046-e2e-tracing
+    url: "https://gitdocs.sabre.com/gitdocs/adrs/adr-0046.html?format=markdown"
+    description: >
+      Use for the mandatory end-to-end tracing requirement for GKE applications
+      in CERT/PROD, cross-service context propagation, sampling strategy, and
+      minimum interaction tags.
+
+  - category: tracing
+    slug: tracing-starter-installation
+    url: "https://gitdocs.sabre.com/gitdocs/ngp-starters/how-to-guides/tracing-starter-installation.html?format=markdown"
+    description: >
+      Use when first adding the Tracing NGP Starter dependency, required GCP
+      properties, operations project, or CXF tracing support to a Java service.
+
   # ── METRICS ──────────────────────────────────────────────────────────────
   - category: metrics
     slug: gcp-application-metrics

@@ -1,61 +1,85 @@
 ---
 name: probe-verify
 description: >
-  Analyze a failed GCP monitoring deployment from its ServiceNow change number.
-  Only invoked explicitly via `/probe-verify`.
+  Diagnose and fix a failed GCP deployment using GCP Advisor evidence from its
+  ServiceNow change number. Only invoked explicitly via `/probe-verify`.
 license: MIT
 disable-model-invocation: true
 ---
 
 # probe-verify
 
-**Resolve every relative path below (`scripts/probe.py`) against this
-plugin's own installed root, not the open workspace.** This file's own
-absolute path always ends in `skills/probe-verify/SKILL.md`; strip that
-suffix to get the root, then invoke the script using the resulting absolute
-path (for example `python3 <root>/scripts/probe.py advisor --chg <CHG>`).
-Never `file_search`/`grep_search` the workspace for `probe.py` — it belongs
-to the plugin installation and will not be found there.
+## Plugin path
 
-## GCP Advisor
+Strip `skills/probe-verify/SKILL.md` from this file's installed absolute path to
+obtain `<root>`. Run `<root>/scripts/probe.py` by absolute path. Never search the
+open workspace for plugin files.
 
-Ask the user for the exact ServiceNow change number, such as `CHG1234567`, if
-it is not already present in the request. Do not attempt to discover it from
-repository files or other systems.
+## 1. Collect evidence
+
+Ask the user for the exact ServiceNow change number, such as `CHG1234567`, when
+the request does not contain one. Do not discover or infer it from other files
+or systems.
 
 Run:
 
 ```bash
-python3 scripts/probe.py advisor --chg <CHG>
+python3 <root>/scripts/probe.py advisor --chg <CHG>
 ```
 
-GCP Advisor needs no browser login, API token, or gcloud authentication.
-Report its `Error`, `Advice`, `Details`, and events without guessing beyond
-the returned evidence.
+Treat `Error`, `Advice`, `Details`, and events as the primary evidence. Do not
+assume the advice is sufficient by itself or extend conclusions beyond the
+returned data.
 
-If the advice identifies a file, locate it only within the service root given
-by the user. Propose the smallest fix and apply it only after confirmation.
-Run the narrowest relevant audit or test after editing.
+- Exit `0`: analysis completed.
+- Exit `2`: network or environment prevented analysis; no verdict.
+- Exit `3` with HTTP 404: ask the user to verify the CHG number.
+- Other exit `3`: report the API or usage error; no verdict.
 
-If Advisor returns HTTP 404, ask the user to verify the change number. If it
-returns no useful analysis, say so; do not fall back to deployment discovery.
+If Advisor returns no useful evidence, say so and stop. Do not search the
+repository or change files speculatively.
 
-## Optional direct GCP checks
+## 2. Locate the root cause
 
-When the user also wants current resource state or Cloud Audit Log evidence,
-ask for the GCP project and monitoring display-name prefix, then run:
+Ask one concise question at a time only when its answer changes the next action
+and cannot be established from the request or Advisor output. Include the
+conflicting evidence and offer only evidence-backed choices. Never guess project
+IDs, display names, paths, or CHG numbers.
+
+Ask for the service root only when locating a reported file. If multiple files
+or services match, ask which one is intended. Search only within the confirmed
+root. Trace the exact Advisor error through the referenced file, nearby
+configuration, and deployment inputs until the repository evidence supports a
+root cause. Do not investigate unrelated warnings or guessed causes.
+
+## 3. Fix and validate
+
+Apply the smallest change that fixes the evidenced root cause. Preserve the
+service's existing configuration style and do not change unrelated files. Run
+the narrowest relevant audit, test, parse, or build check. If validation fails,
+repair the same issue and rerun it; do not claim the deployment is fixed from a
+local check alone.
+
+Report the Advisor evidence, root cause, changed files, and validation result.
+Clearly separate verified facts from anything still requiring redeployment.
+
+## 4. Optional live GCP check
+
+Only when the user requests current state or Cloud Audit Log evidence, ask for
+any missing GCP project or monitoring display-name prefix, then run:
 
 ```bash
-python3 scripts/probe.py verify \
+python3 <root>/scripts/probe.py verify \
   --project <project-id> \
   --display-name-contains <name>
 ```
 
-This command checks matching alert policies and dashboards, then queries recent
-failed Monitoring API create calls. It requires an authenticated `gcloud` CLI.
+This checks matching alert policies, dashboards, and recent failed Monitoring
+API create calls. It requires authenticated `gcloud` access.
 
-Exit codes:
+- Exit `0`: check completed; report only the returned evidence.
+- Exit `2`: environment or authentication prevented the check; no verdict.
+- Exit `3`: API or usage error; no verdict.
 
-- `0`: check completed.
-- `2`: environment or authentication prevented the check; no verdict.
-- `3`: API or usage error; no verdict.
+Never report an inconclusive check as zero matching resources or as a deployment
+result.

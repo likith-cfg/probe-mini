@@ -1,2 +1,2 @@
-description = "Analyze a GCP monitoring deployment or ServiceNow change."
+description = "Diagnose and fix a failed GCP deployment using GCP Advisor evidence."
 prompt = "Use the probe-verify skill for this request: $ARGUMENTS. If no CHG number is provided, ask the user for the exact ServiceNow change number."

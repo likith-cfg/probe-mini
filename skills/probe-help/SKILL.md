@@ -15,7 +15,7 @@ verifies Sabre GCP observability config.
 | Command | Skill | What it does |
 |---|---|---|
 | `/probe` | `probe` | Generate + audit alert policies/dashboards/service monitors from Sabre standards |
-| `/probe-verify` | `probe-verify` | Ask for a change number (CHG), then get GCP Advisor's failure analysis directly |
+| `/probe-verify` | `probe-verify` | Diagnose and fix a failed deployment using GCP Advisor evidence |
 | `/probe-help` | `probe-help` | This message |
 
 GCP Advisor needs no browser login or API token.

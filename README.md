@@ -8,7 +8,7 @@ observability configuration.
 | Command | Purpose |
 |---|---|
 | `/probe` | Generate or audit alert policies, dashboards, and service monitors |
-| `/probe-verify` | Analyze a ServiceNow change with GCP Advisor; optionally check live GCP state |
+| `/probe-verify` | Diagnose and fix a failed deployment using GCP Advisor evidence |
 | `/probe-help` | Show the command reference |
 
 ## Install
@@ -21,6 +21,12 @@ python3 -m pip install -r requirements.txt
 
 Python 3 and PyYAML are required. Live GCP checks use the active `gcloud`
 account; GCP Advisor does not require `gcloud` authentication.
+
+### IntelliJ
+
+Copy `.github/prompts/probe.prompt.md` into the service repository and ensure
+the Probe skill is available to Copilot. With the latest GitHub Copilot plugin,
+the prompt file provides `/probe` in Chat for that workspace.
 
 ## Use
 
