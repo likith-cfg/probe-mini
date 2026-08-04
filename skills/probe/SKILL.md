@@ -55,21 +55,27 @@ Before asking anything else or inspecting repository files, ask:
 > Which folder contains the service? Use directly `.` if this workspace contains one
 > service. If it contains several services, give me the path to this service.
 
-Read that service's `BUILD` file first if it exists and use its exact deployed
-environment names. If no `BUILD` file exists, derive them from
-`configuration/`. Preserve exact spelling, case, and punctuation such as
+Read the single `BUILD` file at the service root first if it exists. Extract its
+`configuration_names` and ask which of those exact configurations are in scope;
+allow multiple selections. If no service-root `BUILD` exists, derive the choices
+from `configuration/`. Preserve exact spelling, case, and punctuation such as
 `GCP-Dev`.
 
 ## 3. Resolve ambiguity
 
-Inspect repository evidence before asking questions. Read, in order:
+After selecting configurations, inspect:
 
-1. `BUILD`, `pom.xml`, `build.gradle`, or `build.gradle.kts`.
-2. `src/main/resources/application*.properties`, `application*.yml`,
-   `application*.yaml`, and logging configuration.
-3. Matching files under `configuration/vars/app` and
-   `configuration/files/helm` for the selected environment.
+1. `pom.xml`, `build.gradle`, or `build.gradle.kts`.
+2. The deployable module's `src/main/resources/application*.properties`,
+   `application*.yml`, `application*.yaml`, and logging configuration.
+3. For each selected configuration, deployment variables under
+   `configuration/vars/app` and its runtime file under
+   `configuration/files/helm/env/<environment>/app-config`.
 4. Source inside `service_root` only for a specific unresolved signal.
+
+Report missing runtime files before editing. List Helm-only environments absent
+from `BUILD`, such as `GCP-CI`, and ask whether they are in scope. Treat
+`configuration/vars` as deployment inputs, never runtime application config.
 
 Determine whether the request is for:
 
@@ -84,7 +90,6 @@ remove existing monitoring objects merely because SRE owns new-service setup.
 Ask a question only when the answer changes the files or standards used and
 cannot be established safely from the repository. Typical ambiguities are:
 
-- more than one service path or environment;
 - conflicting build and deployment configuration;
 - unclear new-service versus existing-monitoring scope;
 - a dependency present without evidence that the service uses it; or
@@ -129,6 +134,22 @@ Compare the service with the selected documents:
 Report each gap with the baseline slug that establishes it. Use the repository's
 existing versions and style unless a selected baseline requires a change. Make
 the smallest complete change and run the narrowest relevant checks.
+
+For each application property or logging change, determine where that setting
+is effective at runtime. Updating local `src/main/resources` is not sufficient
+when environment-specific Helm app config overrides or replaces it. Apply:
+
+- shared settings to local defaults and every selected environment runtime
+  application file;
+- environment-specific values only to their matching runtime file; and
+- deployment variables to `configuration/vars` only when a template consumes
+  them.
+
+Preserve environment-specific names, projects, buckets, endpoints, and secrets.
+Before finishing, compare the changed observability settings across local config
+and every selected runtime app config. Do not report completion while a selected
+environment is missing a required setting; list any intentional difference and
+why it remains.
 
 For an explicit audit of existing alerts or dashboards, run:
 
