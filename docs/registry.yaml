@@ -13,15 +13,6 @@ sources:
       placement, SNOW notification channels or documentation JSON, missing
       metric behavior, trigger duration, and alert deployment errors.
 
-  - category: alerts
-    slug: alerts-terraform
-    url: "https://docs.cloud.google.com/monitoring/alerts/terraform"
-    description: >
-      Use for native Google Terraform Provider alert policies or notification
-      channels (`google_monitoring_alert_policy` and
-      `google_monitoring_notification_channel`), IAM prerequisites, repeated
-      notifications, and `terraform apply`; not for Sabre GKE CRD YAML.
-
   # ── DASHBOARDS ───────────────────────────────────────────────────────────
   - category: dashboards
     slug: gcp-foundation-dashboards
@@ -99,14 +90,6 @@ sources:
       MetricDescriptors, or fix missing-metric validation in PromQL alerts.
 
   - category: metrics
-    slug: metrics-starter-concept
-    url: "https://gitdocs.sabre.com/gitdocs/ngp-starters/concepts/metrics-starter.html?format=markdown"
-    description: >
-      Use when designing a metric's name, meter type, labels, cardinality, or
-      startup value, or deciding whether a single event belongs in logs;
-      not for Micrometer implementation examples.
-
-  - category: metrics
     slug: metrics-starter-default-usage
     url: "https://gitdocs.sabre.com/gitdocs/ngp-starters/how-to-guides/metrics-starter-default-usage.html?format=markdown"
     description: >
@@ -137,11 +120,3 @@ sources:
       Use to tune an installed starter's actuator port/endpoints, Prometheus
       registry, HTTP/gRPC/CXF percentiles or histogram buckets, application
       error headers, HTTP URI-tag limit, or Couchbase gauge cache.
-
-  - category: metrics
-    slug: ops-agent-prometheus
-    url: "https://docs.cloud.google.com/monitoring/agent/ops-agent/prometheus"
-    description: >
-      Use only to configure the Google Cloud Ops Agent Prometheus receiver on
-      Compute Engine: scrape configs, receiver pipelines, relabeling, VM meta
-      labels, ingestion verification, and sample/cardinality cost; not for GKE.
